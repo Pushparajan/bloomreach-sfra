@@ -50,7 +50,7 @@ sequenceDiagram
 ## 2. Free-Text Search & Autosuggest
 
 Standard keyword search and autocomplete calls used by the existing site search
-integration (these shapes are the baseline that all new fq-based features extend).
+integration (these shapes are the baseline that all new filter-query (`fq`)-based features extend).
 
 ```mermaid
 sequenceDiagram
@@ -358,7 +358,7 @@ sequenceDiagram
 ## 7. Work / Job Landing Page
 
 Attribute-filtered browse page for a trade job type (e.g. `/Work-JobLanding?jobType=electrical`).
-Uses the same query-building helper as Boot Finder Q1 and supports standard SFRA page caching.
+Uses the same query-building helper as Boot Finder Question 1 (job-type selection) and supports standard SFRA page caching.
 
 ```mermaid
 sequenceDiagram
@@ -476,7 +476,7 @@ sequenceDiagram
 
     loop Per enabled ThematicPageCombination
         GenerateTP->>GenerateTP: isEligible(combo)
-        alt combo has safetySpec AND SAFETY_SPEC_REFINEMENT flag is off (R-21 gate)
+        alt combo has safetySpec AND SAFETY_SPEC_REFINEMENT flag is off (upstream feed fix pending — skip to avoid stale/corrupted pages)
             GenerateTP->>featureFlags: isEnabled('SAFETY_SPEC_REFINEMENT')
             featureFlags-->>GenerateTP: false
             GenerateTP->>GenerateTP: log warn, skip combination
