@@ -1,0 +1,17 @@
+<!---
+    Compare-select control. This is NOT a replacement product tile - it is
+    meant to be dropped into the site's existing product-tile ISML
+    (commonly components/product/productTile.isml) via:
+        <isinclude template="components/compareControl">
+    at the point where the tile has `product.id` (VG id) in pdict scope, per
+    the instruction to extend the existing tile rather than fork it.
+--->
+<label class="compare-control">
+    <input type="checkbox"
+           class="compare-control__checkbox"
+           data-compare-select
+           data-vg-id="${pdict.product.id}"
+           data-name="${pdict.product.productName}"
+           data-image="${pdict.product.images && pdict.product.images.small && pdict.product.images.small[0] ? pdict.product.images.small[0].url : ''}" />
+    <span class="compare-control__label">${Resource.msg('compare.select', 'compare', 'Compare')}</span>
+</label>

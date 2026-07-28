@@ -1,0 +1,33 @@
+<isdecorate template="common/layout/page">
+    <div class="work-job-landing" data-job-type="${pdict.jobType.value}">
+        <isif condition="${pdict.contentPage}">
+            <isreplace componentcontext="${pdict.contentPage}">
+        </isif>
+
+        <h1 class="work-job-landing__title">${pdict.jobType.label} Boots</h1>
+
+        <isif condition="${pdict.serviceFailed}">
+            <div class="work-job-landing__error">
+                ${Resource.msg('work.joblanding.error', 'work', 'We could not load recommendations right now.')}
+            </div>
+        <iselseif condition="${pdict.products && pdict.products.length}">
+            <div class="product-grid work-job-landing__grid">
+                <isloop items="${pdict.products}" var="product">
+                    <div class="product-tile" data-vg-id="${product.vgId}">
+                        <a href="${URLUtils.url('Product-Show', 'pid', product.vgId)}">
+                            <img src="${product.image}" alt="${product.name}" />
+                            <div class="product-tile__name">${product.name}</div>
+                            <div class="product-tile__price">${product.price}</div>
+                        </a>
+                    </div>
+                </isloop>
+            </div>
+        <iselse/>
+            <div class="work-job-landing__empty">
+                ${Resource.msg('work.joblanding.empty', 'work', 'No products found for this trade yet.')}
+            </div>
+        </isif>
+
+        <isinclude template="components/bootFinderEntry">
+    </div>
+</isdecorate>

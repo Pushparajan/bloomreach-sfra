@@ -1,0 +1,7 @@
+<!---
+    Rendered when the Bloomreach service call fails. Per spec: never
+    silently show unrelated products on failure.
+--->
+<div class="boot-finder-results-grid boot-finder-results-grid--error">
+    ${Resource.msg('bootfinder.results.error', 'bootfinder', 'We could not load boot matches right now. Please try again in a moment.')}
+</div>

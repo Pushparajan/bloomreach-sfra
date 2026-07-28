@@ -1,0 +1,13 @@
+<!---
+    Question/result shell. Questions themselves are driven client-side from
+    the `questions` JSON below so the state machine lives in one place
+    (client/default/js/bootFinder/bootFinder.js) instead of being
+    re-implemented per step template.
+--->
+<div class="boot-finder-modal"
+     data-results-url="${URLUtils.url('BootFinder-Results')}"
+     data-questions='${JSON.stringify(pdict.questions)}'
+     data-shaft-height-mode="${pdict.shaftHeight.mode}">
+    <div class="boot-finder-modal__question-panel" data-boot-finder-questions></div>
+    <div class="boot-finder-modal__results-panel" data-boot-finder-results hidden></div>
+</div>

@@ -1,0 +1,27 @@
+<!---
+    AJAX fragment rendered into [data-boot-finder-results] by BootFinder-Results.
+--->
+<isif condition="${pdict.results && pdict.results.length}">
+    <div class="boot-finder-results-grid">
+        <isloop items="${pdict.results}" var="product">
+            <div class="boot-finder-results-grid__item" data-vg-id="${product.vgId}">
+                <a href="${URLUtils.url('Product-Show', 'pid', product.vgId)}" class="boot-finder-results-grid__link" data-boot-finder-result-click data-vg-id="${product.vgId}">
+                    <img src="${product.image}" alt="${product.name}" class="boot-finder-results-grid__image" />
+                    <div class="boot-finder-results-grid__name">${product.name}</div>
+                    <div class="boot-finder-results-grid__price">${product.price}</div>
+                </a>
+                <isif condition="${product.chips && product.chips.length}">
+                    <ul class="boot-finder-results-grid__chips">
+                        <isloop items="${product.chips}" var="chip">
+                            <li class="rationale-chip">${chip.label}</li>
+                        </isloop>
+                    </ul>
+                </isif>
+            </div>
+        </isloop>
+    </div>
+<iselse/>
+    <div class="boot-finder-results-grid boot-finder-results-grid--empty">
+        ${Resource.msg('bootfinder.results.empty', 'bootfinder', 'No exact matches yet - try adjusting an answer.')}
+    </div>
+</isif>

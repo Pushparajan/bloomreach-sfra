@@ -1,0 +1,45 @@
+<!---
+    Side-by-side comparison table. Rows whose feature flag is off are
+    already excluded from pdict.rows by compareModel.getActiveRows(), so
+    there is no per-row flag check here - the row simply does not exist.
+--->
+<div class="compare-table-wrapper" data-compare-table>
+    <isif condition="${pdict.columns && pdict.columns.length}">
+        <table class="compare-table">
+            <thead>
+                <tr>
+                    <th></th>
+                    <isloop items="${pdict.columns}" var="column">
+                        <th class="compare-table__product-col" data-vg-id="${column.vgId}">
+                            <button type="button" class="compare-table__remove" data-compare-remove data-vg-id="${column.vgId}" aria-label="${Resource.msg('compare.remove', 'compare', 'Remove')}">&times;</button>
+                            <img src="${column.image}" alt="${column.name}" />
+                            <div class="compare-table__name">${column.name}</div>
+                            <div class="compare-table__price">${column.price}</div>
+                            <a class="btn btn-outline-primary" href="${URLUtils.url('Product-Show', 'pid', column.vgId)}">
+                                ${Resource.msg('compare.viewproduct', 'compare', 'View Product')}
+                            </a>
+                        </th>
+                    </isloop>
+                </tr>
+            </thead>
+            <tbody>
+                <isloop items="${pdict.rows}" var="row">
+                    <tr>
+                        <th scope="row">${row.label}</th>
+                        <isloop items="${pdict.columns}" var="column">
+                            <td>
+                                <isif condition="${Array.isArray(column.values[row.key])}">
+                                    ${column.values[row.key].join(' / ')}
+                                <iselse/>
+                                    ${column.values[row.key]}
+                                </isif>
+                            </td>
+                        </isloop>
+                    </tr>
+                </isloop>
+            </tbody>
+        </table>
+    <iselse/>
+        <isinclude template="compare/tableError">
+    </isif>
+</div>

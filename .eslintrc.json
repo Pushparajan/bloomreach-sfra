@@ -1,0 +1,66 @@
+{
+  "extends": ["airbnb-base"],
+  "parserOptions": {
+    "ecmaVersion": 2018,
+    "sourceType": "script"
+  },
+  "env": {
+    "node": true,
+    "commonjs": true,
+    "es6": true
+  },
+  "globals": {
+    "request": true,
+    "response": true,
+    "session": true,
+    "customer": true,
+    "empty": true
+  },
+  "rules": {
+    "strict": ["error", "global"],
+    "indent": ["error", 4],
+    "no-var": "off",
+    "vars-on-top": "off",
+    "one-var": "off",
+    "prefer-arrow-callback": "off",
+    "func-names": "off",
+    "object-shorthand": "off",
+    "prefer-template": "off",
+    "prefer-object-spread": "off",
+    "prefer-destructuring": "off",
+    "comma-dangle": ["error", "never"],
+    "no-underscore-dangle": "off",
+    "import/no-unresolved": "off",
+    "import/no-dynamic-require": "off",
+    "global-require": "off",
+    "no-plusplus": "off",
+    "no-use-before-define": ["error", { "functions": false }],
+    "import/extensions": "off",
+    "import/order": "off",
+    "object-curly-newline": "off",
+    "max-len": ["error", 120]
+  },
+  "overrides": [
+    {
+      "files": ["**/cartridge/client/**/*.js"],
+      "env": {
+        "browser": true,
+        "jquery": true,
+        "node": false
+      },
+      "rules": {
+        "strict": "off"
+      }
+    },
+    {
+      "files": ["test/**/*.js"],
+      "env": {
+        "mocha": true,
+        "node": true
+      },
+      "rules": {
+        "max-len": ["error", 160]
+      }
+    }
+  ]
+}

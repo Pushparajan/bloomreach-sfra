@@ -1,0 +1,5 @@
+<isdecorate template="common/layout/page">
+    <div class="work-job-landing work-job-landing--not-found">
+        ${Resource.msg('work.joblanding.notfound', 'work', 'This page is not available.')}
+    </div>
+</isdecorate>

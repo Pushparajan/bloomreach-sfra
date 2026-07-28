@@ -1,0 +1,3 @@
+<div class="compare-table-wrapper compare-table-wrapper--error" data-compare-table>
+    ${pdict.message || Resource.msg('compare.error', 'compare', 'We could not load comparison data right now.')}
+</div>

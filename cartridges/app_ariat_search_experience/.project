@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<projectDescription>
+	<name>app_ariat_search_experience</name>
+	<comment>Boot Finder, Comparison Tool, Work Job Landing Pages, Thematic Pages job, Loomi stub</comment>
+	<natures>
+		<nature>com.demandware.studio.core.beehiveNature</nature>
+	</natures>
+</projectDescription>

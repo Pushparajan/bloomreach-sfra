@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    Custom object type definition for the Feature 4 combination matrix.
+    Import via Business Manager > Administration > Site Development > Import
+    & Export, or as part of the standard metadata deployment. Merchandising/
+    SEO edit rows of this type in Business Manager (Merchant Tools > Custom
+    Objects) without a code deploy, satisfying "expose this as a site
+    preference or custom object list, NOT hardcoded in the job step."
+-->
+<metadata xmlns="http://www.demandware.com/xml/impex/metadata/2006-10-31">
+    <custom-type type-id="ThematicPageCombination">
+        <display-name xml:lang="x-default">Thematic Page Combination</display-name>
+        <description xml:lang="x-default">One row = one job_type x safety_specs x Toe_Shape combination eligible for an SEO thematic page.</description>
+        <staging-mode>syncable</staging-mode>
+        <storage-scope>site</storage-scope>
+        <key-attribute attribute-id="combinationKey" type-id="string" />
+        <attribute-definitions>
+            <attribute-definition attribute-id="jobType">
+                <display-name xml:lang="x-default">Job Type</display-name>
+                <type>string</type>
+                <mandatory-flag>true</mandatory-flag>
+            </attribute-definition>
+            <attribute-definition attribute-id="safetySpec">
+                <display-name xml:lang="x-default">Safety Spec</display-name>
+                <type>string</type>
+                <mandatory-flag>false</mandatory-flag>
+            </attribute-definition>
+            <attribute-definition attribute-id="toeShape">
+                <display-name xml:lang="x-default">Toe Shape</display-name>
+                <type>string</type>
+                <mandatory-flag>false</mandatory-flag>
+            </attribute-definition>
+            <attribute-definition attribute-id="enabled">
+                <display-name xml:lang="x-default">Enabled</display-name>
+                <type>boolean</type>
+                <default-value>true</default-value>
+            </attribute-definition>
+        </attribute-definitions>
+    </custom-type>
+</metadata>

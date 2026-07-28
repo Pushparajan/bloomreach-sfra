@@ -1,0 +1,34 @@
+{
+    "step-types": {
+        "script-module-step": [
+            {
+                "@type-id": "custom.GenerateThematicPages",
+                "@supports-parallel-execution": "false",
+                "@supports-site-context": "true",
+                "@supports-organization-context": "false",
+                "description": "R-40: Generates/retires Work-Buyer thematic SEO landing pages from the ThematicPageCombination custom object matrix.",
+                "module": "int_ariat_bloomreach/cartridge/scripts/jobs/GenerateThematicPages.js",
+                "function": "execute",
+                "transactional": "true",
+                "timeout-in-seconds": "3600",
+                "parameters": {
+                    "parameters": [
+                        {
+                            "@name": "DryRun",
+                            "@type": "boolean",
+                            "@required": "false",
+                            "description": "If true, logs planned page create/hide actions without writing content changes.",
+                            "default-value": "false"
+                        }
+                    ]
+                },
+                "status-codes": {
+                    "status": [
+                        { "@code": "ERROR", "description": "Used when a job run encounters an error." },
+                        { "@code": "OK", "description": "Used when a job run completes successfully." }
+                    ]
+                }
+            }
+        ]
+    }
+}

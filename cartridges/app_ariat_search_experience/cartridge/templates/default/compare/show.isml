@@ -1,0 +1,5 @@
+<isdecorate template="common/layout/page">
+    <div class="compare-page" data-compare-url="${URLUtils.url('Compare-Show')}">
+        <isinclude template="compare/table">
+    </div>
+</isdecorate>

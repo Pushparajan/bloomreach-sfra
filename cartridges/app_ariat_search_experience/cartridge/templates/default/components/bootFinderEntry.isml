@@ -1,0 +1,15 @@
+<!---
+    Embeddable Boot Finder entry card. Include on generic Work PLP / Work
+    landing templates only via:
+        <isinclude template="components/bootFinderEntry">
+    Renders as a dismissible card beside the product grid - never replaces
+    or gates the grid markup.
+--->
+<div class="boot-finder-entry-card" data-dismiss-key="boot-finder-entry">
+    <button type="button" class="boot-finder-entry-card__dismiss" data-dismiss-boot-finder aria-label="${Resource.msg('bootfinder.dismiss', 'bootfinder', null)}">&times;</button>
+    <h3 class="boot-finder-entry-card__title">${Resource.msg('bootfinder.entry.title', 'bootfinder', 'Find Your Boot')}</h3>
+    <p class="boot-finder-entry-card__copy">${Resource.msg('bootfinder.entry.copy', 'bootfinder', 'Answer a few quick questions and we will match you to the right boot.')}</p>
+    <button type="button" class="btn btn-primary boot-finder-entry-card__cta" data-start-boot-finder data-url="${URLUtils.url('BootFinder-Show')}">
+        ${Resource.msg('bootfinder.entry.cta', 'bootfinder', 'Start Boot Finder')}
+    </button>
+</div>

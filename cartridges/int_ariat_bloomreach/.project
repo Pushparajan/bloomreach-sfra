@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<projectDescription>
+	<name>int_ariat_bloomreach</name>
+	<comment>Custom Bloomreach Discovery service layer and shared query/identity helpers</comment>
+	<natures>
+		<nature>com.demandware.studio.core.beehiveNature</nature>
+	</natures>
+</projectDescription>
