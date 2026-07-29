@@ -307,12 +307,15 @@ When enabled via the `lowStockBuryThreshold` site preference, the integration au
 4. For each combination: queries Bloomreach → gets matching product list.
 5. Job creates or updates a SFCC Content Asset under folder "work-thematic-pages".
    - Content ID: work-{combinationKey}
-   - Writes JSON-LD ItemList structured data markup for SEO.
+   - Writes JSON-LD ItemList structured data markup for SEO, plus a real product
+     grid so shoppers can act on the page directly (see below).
    - Sets content ONLINE if products found, OFFLINE if no products (prevents empty pages from being indexed).
 6. Job supports a "dry-run" mode for safe testing without writing content assets.
 ```
 
 **Key safeguard:** If Bloomreach returns zero products for a combination, the content asset is set offline automatically. This prevents empty thematic pages from being crawled and indexed, which would hurt SEO.
+
+**Comparison Tool integration:** Each product tile in the generated grid carries the same compare-checkbox markup as `components/compareControl.isml` (`data-compare-select` / `data-vg-id` / `data-name` / `data-image`), and the page includes a "View Comparison" trigger using the same `data-compare-view` contract the site's `compare.js` already listens for. Because `compare.js`'s handlers are delegated at the document level and the `Compare-Show` route is unchanged, shoppers can select 2–4 products straight from a thematic page and jump into the existing Comparison Tool — no new controller, service, or credentials were introduced for this.
 
 ---
 
@@ -513,6 +516,7 @@ Navigate to: **Merchant Tools > Content > Content Assets > work-thematic-pages**
 
 Each asset contains:
 - JSON-LD `ItemList` structured data markup (for Google rich results)
+- A product grid with Comparison Tool checkboxes and a "View Comparison" trigger (see §5.4)
 - Online/offline state controlled automatically by the job
 
 ---
