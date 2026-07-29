@@ -258,11 +258,15 @@ When enabled via the `lowStockBuryThreshold` site preference, the integration au
 **Functional flow:**
 
 ```
-1. Shopper checks comparison checkboxes on product tiles (PLP, Boot Finder results).
+1. Shopper checks comparison checkboxes on product tiles (PLP, Boot Finder results, Thematic Pages).
 2. Client JS stores selected product IDs in sessionStorage.
-3. When 2+ items are selected, a "Compare" button/bar appears.
-4. Shopper clicks "Compare" → browser navigates to Compare-Show with IDs in URL.
-5. Server fetches full product data for each ID from Bloomreach.
+3. When 2+ items are selected, a "Compare"/"View Comparison" button/bar appears.
+4. Shopper clicks it → browser navigates to Compare-Show with IDs in URL (plus a `theme`
+   param when the trigger came from a Thematic Page - see data-theme-key in §5.4).
+5. Server checks whether a `theme` param was sent and, if so, whether that Thematic Page is
+   online and its stored product set contains every requested ID - if so, it reuses that data.
+   Otherwise (no theme param, page offline, or any ID not in that page's set), server fetches
+   full product data for each ID from Bloomreach live.
 6. Comparison table renders with each product as a column and attributes as rows.
 7. Shopper can remove a product (re-requests with fewer IDs) or click "View Product".
 ```
@@ -270,6 +274,8 @@ When enabled via the `lowStockBuryThreshold` site preference, the integration au
 **Constraints:**
 - Minimum 2 products required.
 - Maximum 4 products enforced (extra IDs are silently truncated server-side).
+
+**Thematic Page fallback:** `helpers/thematicPageLookup.findDocsByCombinationKey` looks up the exact Thematic Page by key and returns its stored `productData` only when every requested ID is present in it; a partial match (e.g. the shopper added a product from elsewhere on the site) or any lookup failure falls back to the normal live Bloomreach call automatically. Comparisons started anywhere other than a Thematic Page (PLP, Boot Finder) always use the live call, since there's no `theme` param to look up.
 
 **Attribute rows shown** (feature-flagged rows excluded if their flag is off):
 - Product name, image, price

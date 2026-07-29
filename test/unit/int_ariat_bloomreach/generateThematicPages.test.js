@@ -214,6 +214,7 @@ describe('int_ariat_bloomreach/jobs/GenerateThematicPages', function () {
 
         assert.match(content.custom.body, /data-compare-view/);
         assert.match(content.custom.body, /data-url="[^"]*Compare-Show"/);
+        assert.include(content.custom.body, 'data-theme-key="electrical-composite"');
     });
 
     it('product grid: HTML-escapes product data so a feed value cannot break out of markup', function () {

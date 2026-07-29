@@ -81,7 +81,18 @@ module.exports = {
             if (ids.length < 2) {
                 return;
             }
-            window.location.href = $(this).data('url') + '?pids=' + ids.join(',');
+
+            var url = $(this).data('url') + '?pids=' + ids.join(',');
+            var themeKey = $(this).data('theme-key');
+            if (themeKey) {
+                // Lets Compare-Show reuse this Thematic Page's own product
+                // data instead of a live Bloomreach call - see
+                // helpers/thematicPageLookup.findDocsByCombinationKey. If
+                // that data isn't available server-side for any reason, the
+                // route falls back to its normal live lookup automatically.
+                url += '&theme=' + encodeURIComponent(themeKey);
+            }
+            window.location.href = url;
         });
     }
 };

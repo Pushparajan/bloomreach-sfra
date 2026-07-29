@@ -24,7 +24,8 @@ function load(options) {
         'dw/content/ContentMgr': { getContent: getContent },
         'dw/system/Logger': loggerStub(),
         './thematicPageCombinations': { getEnabledCombinations: sinon.stub().returns(combos) },
-        './bloomreachConstants': require('../../../cartridges/int_ariat_bloomreach/cartridge/scripts/helpers/bloomreachConstants')
+        './bloomreachConstants': require('../../../cartridges/int_ariat_bloomreach/cartridge/scripts/helpers/bloomreachConstants'),
+        './bloomreachIdentity': { fromBloomreachHit: function (hit) { return { vgId: hit.pid, skuId: hit.sku }; } }
     });
 }
 
@@ -90,5 +91,59 @@ describe('int_ariat_bloomreach/helpers/thematicPageLookup', function () {
         var docs = mod.findDocs({ job_type: 'electrical', Toe_Shape: 'Composite' });
 
         assert.isNull(docs);
+    });
+
+    describe('findDocsByCombinationKey', function () {
+        it('returns the online page\'s stored docs, in the requested vgId order, when every id is present', function () {
+            var mod = load({
+                content: {
+                    online: true,
+                    custom: {
+                        productData: JSON.stringify([
+                            { pid: 'VG-1', title: 'Boot A' },
+                            { pid: 'VG-2', title: 'Boot B' },
+                            { pid: 'VG-3', title: 'Boot C' }
+                        ])
+                    }
+                }
+            });
+
+            var docs = mod.findDocsByCombinationKey('electrical-composite', ['VG-2', 'VG-1']);
+
+            assert.deepEqual(docs, [{ pid: 'VG-2', title: 'Boot B' }, { pid: 'VG-1', title: 'Boot A' }]);
+        });
+
+        it('returns null on a partial match, so the caller falls back to a live lookup rather than an incomplete comparison', function () {
+            var mod = load({
+                content: {
+                    online: true,
+                    custom: { productData: JSON.stringify([{ pid: 'VG-1', title: 'Boot A' }]) }
+                }
+            });
+
+            var docs = mod.findDocsByCombinationKey('electrical-composite', ['VG-1', 'VG-2']);
+
+            assert.isNull(docs);
+        });
+
+        it('returns null when combinationKey or vgIds is missing/empty', function () {
+            var mod = load();
+
+            assert.isNull(mod.findDocsByCombinationKey('', ['VG-1']));
+            assert.isNull(mod.findDocsByCombinationKey('electrical-composite', []));
+            assert.isNull(mod.findDocsByCombinationKey('electrical-composite', null));
+        });
+
+        it('returns null when the content asset is offline', function () {
+            var mod = load({ content: { online: false, custom: { productData: '[]' } } });
+
+            assert.isNull(mod.findDocsByCombinationKey('electrical-composite', ['VG-1']));
+        });
+
+        it('returns null when the content asset does not exist', function () {
+            var mod = load({ getContent: sinon.stub().returns(null) });
+
+            assert.isNull(mod.findDocsByCombinationKey('electrical-composite', ['VG-1']));
+        });
     });
 });

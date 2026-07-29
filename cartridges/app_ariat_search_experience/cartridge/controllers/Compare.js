@@ -5,6 +5,7 @@ var interactiveCache = require('*/cartridge/scripts/middleware/interactiveCache'
 var productLookupHelper = require('*/cartridge/scripts/helpers/bloomreachProductLookupHelper');
 var compareModel = require('*/cartridge/scripts/compare/compareModel');
 var bloomreachLogger = require('*/cartridge/scripts/helpers/bloomreachLogger');
+var thematicPageLookup = require('*/cartridge/scripts/helpers/thematicPageLookup');
 
 var FEATURE = 'Compare';
 
@@ -27,25 +28,46 @@ server.get('Show', interactiveCache.applyNoCache, function (req, res, next) {
         vgIds = vgIds.slice(0, productLookupHelper.MAX_COMPARE_ITEMS);
     }
 
-    var bloomreachResponse;
-    try {
-        bloomreachResponse = productLookupHelper.lookupByIds(vgIds, FEATURE);
-    } catch (e) {
-        bloomreachLogger.logServiceFailure(FEATURE, e, { vgIds: vgIds });
-        res.setStatusCode(502);
-        res.render('compare/tableError', { message: 'We could not load comparison data right now.' });
-        next();
-        return;
+    // When the shopper arrived from a Thematic Page (see data-theme-key in
+    // GenerateThematicPages), reuse that page's own stored product set
+    // instead of a live Bloomreach call. Any failure, missing page, or
+    // partial match (e.g. an id added from elsewhere on the site) falls
+    // back to the normal live lookup below - this is purely a performance
+    // optimization, never a behavior change.
+    var themeKey = req.querystring.theme;
+    var docs = null;
+    if (themeKey) {
+        try {
+            docs = thematicPageLookup.findDocsByCombinationKey(themeKey, vgIds);
+        } catch (e) {
+            bloomreachLogger.logWarn(FEATURE, 'Thematic page lookup failed, falling back to live query', {
+                error: e.message
+            });
+        }
     }
 
-    if (!bloomreachResponse) {
-        res.setStatusCode(502);
-        res.render('compare/tableError', { message: 'We could not load comparison data right now.' });
-        next();
-        return;
+    if (!docs) {
+        var bloomreachResponse;
+        try {
+            bloomreachResponse = productLookupHelper.lookupByIds(vgIds, FEATURE);
+        } catch (e) {
+            bloomreachLogger.logServiceFailure(FEATURE, e, { vgIds: vgIds });
+            res.setStatusCode(502);
+            res.render('compare/tableError', { message: 'We could not load comparison data right now.' });
+            next();
+            return;
+        }
+
+        if (!bloomreachResponse) {
+            res.setStatusCode(502);
+            res.render('compare/tableError', { message: 'We could not load comparison data right now.' });
+            next();
+            return;
+        }
+
+        docs = (bloomreachResponse.response && bloomreachResponse.response.docs) || [];
     }
 
-    var docs = (bloomreachResponse.response && bloomreachResponse.response.docs) || [];
     var table = compareModel.build(docs);
 
     res.render('compare/table', table);
