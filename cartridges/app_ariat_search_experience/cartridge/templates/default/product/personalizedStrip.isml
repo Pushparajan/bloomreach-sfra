@@ -1,0 +1,27 @@
+<!---
+    R-38: 1:1-personalized "recommended with this" fragment for the PDP,
+    rendered by Product-PersonalizedStrip. Renders nothing at all when
+    pdict.products is empty/null (flag off, guest, no matching product, or
+    a Bloomreach failure) - there is no confirmed existing non-personalized
+    PDP recommendation content zone to fall back to (unlike Work Job
+    Landing's fragment), so the client-side placeholder simply collapses
+    in that case. See controllers/Product.js for the full reasoning.
+--->
+<isif condition="${pdict.products && pdict.products.length}">
+    <div class="product-detail__personalized-strip" data-personalized="true">
+        <h2 class="product-detail__personalized-strip-title">
+            ${Resource.msg('product.personalized.title', 'product', 'Recommended With This')}
+        </h2>
+        <div class="product-grid product-detail__personalized-strip-grid">
+            <isloop items="${pdict.products}" var="product">
+                <div class="product-tile" data-vg-id="${product.vgId}">
+                    <a href="${URLUtils.url('Product-Show', 'pid', product.vgId)}">
+                        <img src="${product.image}" alt="${product.name}" />
+                        <div class="product-tile__name">${product.name}</div>
+                        <div class="product-tile__price">${product.price}</div>
+                    </a>
+                </div>
+            </isloop>
+        </div>
+    </div>
+</isif>
