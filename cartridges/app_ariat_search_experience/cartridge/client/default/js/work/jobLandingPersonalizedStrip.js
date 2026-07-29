@@ -1,24 +1,31 @@
 'use strict';
 
 /**
- * R-38: fetches the 1:1-personalized (or segment-level fallback) content
- * strip for Work-JobLanding client-side, after the cached shell has already
- * loaded - so the shell's own page-cache eligibility (cache.applyDefaultCache,
- * see controllers/Work.js) is completely untouched by this.
+ * R-38: fetches a 1:1-personalized (or non-personalized fallback) content
+ * fragment client-side, after the cached shell/page has already loaded -
+ * so the shell's own page-cache eligibility is completely untouched.
  *
- * Default (client-fetch) integration: Work-PersonalizedStrip is a standalone
- * controller endpoint, so this can be swapped for an SFRA remote include
- * later without changing the endpoint itself, if server-rendering turns out
- * to be preferable.
+ * Deliberately generic: this is a plain [data-personalized-strip-url]
+ * attribute selector, not scoped to Work-JobLanding specifically, so it
+ * also serves the Thematic Pages personalized strip
+ * (jobs/GenerateThematicPages.js's buildPersonalizedStripPlaceholder,
+ * fetched from controllers/ThematicPage.js's PersonalizedStrip route) with
+ * no changes needed here - each page only ever renders one such
+ * placeholder, so a single shared module covers both without conflict.
+ *
+ * Default (client-fetch) integration: each fragment is a standalone
+ * controller endpoint, so any of them can be swapped for an SFRA remote
+ * include later without changing the endpoint itself, if server-rendering
+ * turns out to be preferable.
  *
  * Failure handling: if the fetch itself fails (network error, non-2xx), the
  * skeleton placeholder is simply removed rather than left stuck loading or
- * visibly broken - the shell's own hero/copy/product grid render fully
- * independently of this fragment either way. The FAR more common case (flag
- * off, guest, or a Bloomreach-side personalization failure) is handled
- * entirely server-side in one request - the response is still HTML success,
- * just the existing segment-level content zone instead of a personalized one
- * - so this client-side error branch is only reached for a real fragment
+ * visibly broken - the shell/page's own content renders fully independently
+ * of this fragment either way. The FAR more common case (flag off, guest,
+ * or a Bloomreach-side personalization failure) is handled entirely
+ * server-side in one request - the response is still HTML success, just
+ * the fallback content (or nothing) instead of a personalized one - so
+ * this client-side error branch is only reached for a real fragment
  * request/server failure.
  */
 module.exports = {

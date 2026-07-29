@@ -1,0 +1,27 @@
+<!---
+    R-38: 1:1-personalized "recommended for you" fragment for a generated
+    Thematic Page, rendered by ThematicPage-PersonalizedStrip. Renders
+    nothing at all when pdict.products is empty/null (flag off, guest, no
+    job_type context, or a Bloomreach failure) - the page's own static
+    product grid (with Comparison Tool checkboxes) already IS the
+    non-personalized experience, so there is nothing else to fall back to.
+    See controllers/ThematicPage.js for the full reasoning.
+--->
+<isif condition="${pdict.products && pdict.products.length}">
+    <div class="thematic-page__personalized-strip" data-personalized="true">
+        <h2 class="thematic-page__personalized-strip-title">
+            ${Resource.msg('thematicpage.personalized.title', 'thematicpage', 'Recommended for You')}
+        </h2>
+        <div class="product-grid thematic-page__personalized-strip-grid">
+            <isloop items="${pdict.products}" var="product">
+                <div class="product-tile" data-vg-id="${product.vgId}">
+                    <a href="${URLUtils.url('Product-Show', 'pid', product.vgId)}">
+                        <img src="${product.image}" alt="${product.name}" />
+                        <div class="product-tile__name">${product.name}</div>
+                        <div class="product-tile__price">${product.price}</div>
+                    </a>
+                </div>
+            </isloop>
+        </div>
+    </div>
+</isif>

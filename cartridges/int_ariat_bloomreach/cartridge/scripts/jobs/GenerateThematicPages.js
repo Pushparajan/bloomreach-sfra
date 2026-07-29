@@ -16,14 +16,19 @@
  * existing "Generate Sitemap" job step in the same job chain, so sitemap
  * output picks up the online/offline state on the same run.
  *
- * custom.body holds two things back to back: the schema.org JSON-LD
- * (unchanged) and a real product grid so the Comparison Tool can be used
+ * custom.body holds three things back to back: the schema.org JSON-LD
+ * (unchanged); a real product grid so the Comparison Tool can be used
  * directly from the thematic page - each tile's checkbox reuses the exact
  * markup/classes/data-attributes of components/compareControl.isml
  * (data-compare-select/data-vg-id/data-name/data-image) and the page's
  * "View Comparison" trigger reuses compare.js's existing data-compare-view
- * contract, so no new client JS, controller, or service is introduced; the
- * existing Compare-Show route and compare.js handlers work unmodified.
+ * contract, so no new client JS, controller, or service is introduced for
+ * that piece; the existing Compare-Show route and compare.js handlers work
+ * unmodified. And (R-38) a personalized-strip placeholder - see
+ * buildPersonalizedStripPlaceholder() below - fetched client-side by the
+ * SAME generic client module Work-JobLanding's fragment already uses,
+ * calling a new live route (ThematicPage-PersonalizedStrip) this batch job
+ * itself never invokes.
  */
 
 var ContentMgr = require('dw/content/ContentMgr');
@@ -144,6 +149,41 @@ function buildProductGridMarkup(combo, docs) {
         + '</button>';
 }
 
+/**
+ * R-38: placeholder for the 1:1-personalized "recommended for you" strip,
+ * fetched client-side by the SAME generic client module Work-JobLanding's
+ * fragment uses (client/default/js/work/jobLandingPersonalizedStrip.js -
+ * it's a plain [data-personalized-strip-url] attribute selector, not
+ * scoped to any one page type, so no new client JS was needed here).
+ *
+ * The fragment URL is fully built here, at generation time, from the same
+ * combo fields buildAnswers() already used for this page's own query -
+ * ThematicPage-PersonalizedStrip re-derives the identical hard-filtered
+ * query (plus user_id) at request time rather than re-reading the
+ * ThematicPageCombination custom object, so the fragment stays fast.
+ *
+ * Unlike Work-JobLanding's fragment, there is no separate non-personalized
+ * content-zone mechanism to fall back to here - this page's own static
+ * product grid (with Comparison Tool checkboxes) above already IS the
+ * non-personalized experience, baked into the cached page itself. So (like
+ * the PDP/Category fragments) ThematicPage-PersonalizedStrip renders
+ * nothing at all when ineligible or on failure, rather than inventing a
+ * fallback data source that doesn't exist.
+ */
+function buildPersonalizedStripPlaceholder(combo) {
+    var query = 'jobType=' + encodeURIComponent(combo.jobType);
+    if (combo.toeShape) {
+        query += '&toeShape=' + encodeURIComponent(combo.toeShape);
+    }
+    if (combo.safetySpec) {
+        query += '&safetySpec=' + encodeURIComponent(combo.safetySpec);
+    }
+
+    return '<div class="thematic-page__personalized-strip-placeholder" '
+        + 'data-personalized-strip-url="' + STOREFRONT_BASE_URL + 'ThematicPage-PersonalizedStrip?' + query + '">'
+        + '</div>';
+}
+
 function upsertContent(combo, docs, dryRun) {
     var contentId = 'work-' + combo.key;
     var hasProducts = docs.length > 0;
@@ -172,7 +212,9 @@ function upsertContent(combo, docs, dryRun) {
         if (hasProducts) {
             var schemaOrgJson = buildSchemaOrgMarkup(combo, docs);
             var schemaOrgMarkup = '<script type="application/ld+json">' + schemaOrgJson + '</script>';
-            content.custom.body = schemaOrgMarkup + buildProductGridMarkup(combo, docs);
+            content.custom.body = schemaOrgMarkup
+                + buildProductGridMarkup(combo, docs)
+                + buildPersonalizedStripPlaceholder(combo);
             content.custom.productCount = docs.length;
             // Raw hits, kept alongside the display markup so Boot Finder can
             // reuse this exact, already-hard-filtered product set (see
