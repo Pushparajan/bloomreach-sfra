@@ -86,7 +86,6 @@ sequenceDiagram
     end
 ```
 
----
 
 ## 3. Boot Finder – Initial Page Load (Show)
 
