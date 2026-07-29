@@ -38,6 +38,16 @@ function isReusable(answers) {
 }
 
 /**
+ * Per Bloomreach's documented Thematic Page error handling (zero matching
+ * products must trigger the fallback path, never render as a valid empty
+ * result - https://documentation.bloomreach.com/discovery/reference/
+ * error-handling-for-the-thematic-api), an empty or malformed stored product
+ * set is treated as "not available" here, not as a valid empty match. This
+ * is also why GenerateThematicPages takes a zero-product combination
+ * offline rather than publishing an empty page - this is the second,
+ * defense-in-depth guard against ever surfacing "zero products" as if it
+ * were a successful result.
+ *
  * @param {string} combinationKey
  * @returns {Object[]|null} the online content asset's stored raw Bloomreach
  *   hits for this combination, or null if the page/data isn't available
@@ -48,12 +58,15 @@ function getStoredDocs(combinationKey) {
         return null;
     }
 
+    var docs;
     try {
-        return JSON.parse(content.custom.productData);
+        docs = JSON.parse(content.custom.productData);
     } catch (e) {
         log.warn('Could not parse stored productData for {0}: {1}', 'work-' + combinationKey, e.message);
         return null;
     }
+
+    return Array.isArray(docs) && docs.length > 0 ? docs : null;
 }
 
 /**

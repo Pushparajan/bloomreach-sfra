@@ -93,6 +93,21 @@ describe('int_ariat_bloomreach/helpers/thematicPageLookup', function () {
         assert.isNull(docs);
     });
 
+    it('returns null (not an empty array) when the stored productData is zero products, per Bloomreach\'s documented ' +
+        'error handling that zero products must trigger the fallback rather than a valid empty result', function () {
+        var mod = load({ content: { online: true, custom: { productData: '[]' } } });
+
+        var docs = mod.findDocs({ job_type: 'electrical', Toe_Shape: 'Composite' });
+
+        assert.isNull(docs);
+    });
+
+    it('returns null when stored productData parses to something other than an array (corrupted data)', function () {
+        var mod = load({ content: { online: true, custom: { productData: '{"not":"an array"}' } } });
+
+        assert.isNull(mod.findDocs({ job_type: 'electrical', Toe_Shape: 'Composite' }));
+    });
+
     describe('findDocsByCombinationKey', function () {
         it('returns the online page\'s stored docs, in the requested vgId order, when every id is present', function () {
             var mod = load({
@@ -142,6 +157,12 @@ describe('int_ariat_bloomreach/helpers/thematicPageLookup', function () {
 
         it('returns null when the content asset does not exist', function () {
             var mod = load({ getContent: sinon.stub().returns(null) });
+
+            assert.isNull(mod.findDocsByCombinationKey('electrical-composite', ['VG-1']));
+        });
+
+        it('returns null when the stored productData is zero products, per Bloomreach\'s documented error handling', function () {
+            var mod = load({ content: { online: true, custom: { productData: '[]' } } });
 
             assert.isNull(mod.findDocsByCombinationKey('electrical-composite', ['VG-1']));
         });
