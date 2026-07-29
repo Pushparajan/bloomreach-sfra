@@ -426,72 +426,96 @@ sequenceDiagram
 Attribute-filtered browse page for a trade job type (e.g. `/Work-JobLanding?jobType=electrical`).
 Uses the same query-building helper as Boot Finder Question 1 (job-type selection) and supports standard SFRA page caching.
 
-```mermaid
+...mermaid
+---
+config:
+  layout: elk
+---
 sequenceDiagram
-    participant Browser
-    participant WorkCtrl as Work Controller<br/>(JobLanding)
-    participant sfraCache as cache.applyDefaultCache<br/>(SFRA standard)
+    participant SFCCJob as SFCC Job Framework
+    participant GenerateTP as GenerateThematicPages<br/>(execute)
+    participant CustomObjMgr as CustomObjectMgr<br/>(SFCC)
     participant featureFlags as featureFlags
-    participant jobTypeHelper as jobTypeHelper
     participant attrQueryHelper as bloomreachAttributeQueryHelper
     participant inventoryBury as inventoryBuryHelper
-    participant SitePrefs as Site Custom Prefs
     participant bloomreachService as bloomreachService
     participant BloomreachAPI as Bloomreach Discovery API
     participant identity as bloomreachIdentity
-    participant PageMgr as PageMgr<br/>(SFCC Page Designer)
+    participant Transaction as Transaction<br/>(SFCC)
+    participant ContentMgr as ContentMgr<br/>(SFCC)
 
-    Browser->>WorkCtrl: GET /Work-JobLanding?jobType=electrical
-    WorkCtrl->>sfraCache: applyDefaultCache()
-    Note over sfraCache: Standard SFRA page cache (NOT no-cache,<br/>unlike Boot Finder / Compare)
-    sfraCache-->>WorkCtrl: next()
+    SFCCJob->>GenerateTP: execute({DryRun: true|false})
 
-    WorkCtrl->>featureFlags: isEnabled('JOB_TYPE')
-    alt JOB_TYPE disabled
-        featureFlags-->>WorkCtrl: false
-        WorkCtrl-->>Browser: render work/jobLandingNotFound
-    else JOB_TYPE enabled
-        featureFlags-->>WorkCtrl: true
-        WorkCtrl->>jobTypeHelper: getBySlug('electrical')
-        jobTypeHelper->>featureFlags: isEnabled('JOB_TYPE') (guard inside getJobTypes())
-        featureFlags-->>jobTypeHelper: true
-        jobTypeHelper->>jobTypeHelper: find slug in JOB_TYPES[]
-        alt Slug not found
-            jobTypeHelper-->>WorkCtrl: null
-            WorkCtrl-->>Browser: render work/jobLandingNotFound
-        else Slug found
-            jobTypeHelper-->>WorkCtrl: {value:'electrical', slug:'electrical', label:'Electrical'}
+    GenerateTP->>CustomObjMgr: getAllCustomObjects("ThematicPageCombination")
+    CustomObjMgr-->>GenerateTP: iterator of enabled combinations
 
-            WorkCtrl->>jobTypeHelper: toAnswerFilter('electrical')
-            jobTypeHelper-->>WorkCtrl: {job_type: 'electrical'}
+    loop Per enabled ThematicPageCombination
+        GenerateTP->>GenerateTP: isEligible(combo)
+        alt combo has safetySpec AND SAFETY_SPEC_REFINEMENT flag is off (upstream feed fix pending — skip to avoid stale/corrupted pages)
+            GenerateTP->>featureFlags: isEnabled("SAFETY_SPEC_REFINEMENT")
+            featureFlags-->>GenerateTP: false
+            GenerateTP->>GenerateTP: log warn, skip combination
+        else eligible
+            GenerateTP->>GenerateTP: buildAnswers(combo)<br/>{job_type, toe_shape?, safety_specs?}
 
-            WorkCtrl->>featureFlags: isEnabled('REVIEW_COUNT_BOOST')
-            WorkCtrl->>featureFlags: isEnabled('SALES_RANK_TIEBREAK')
-            featureFlags-->>WorkCtrl: booleans
-
-            WorkCtrl->>attrQueryHelper: queryByAttributes({answers:{job_type:'electrical'},<br/>hardFields:[], reviewCountBoostEnabled, salesRankTiebreakEnabled, rows:30})
-            attrQueryHelper->>attrQueryHelper: buildFilterQueries(answers)<br/>soft boost fq: job_type:"electrical"^1.5
+            GenerateTP->>attrQueryHelper: queryByAttributes({answers, hardFields:[JOB_TYPE,TOE_SHAPE,SAFETY_SPECS], rows:48})
+            attrQueryHelper->>attrQueryHelper: buildFilterQueries(answers, {hardFields})<br/>hard fq filters (no boost weight) per field
             attrQueryHelper->>inventoryBury: getBuryFilterQuery()
-            inventoryBury->>SitePrefs: getCustomPreferenceValue('lowStockBuryThreshold')
-            SitePrefs-->>inventoryBury: threshold
             inventoryBury-->>attrQueryHelper: bury fq fragment
-            attrQueryHelper->>bloomreachService: call({fq, sort, rows:30})
-            bloomreachService->>BloomreachAPI: GET /?fq=job_type:"electrical"^1.5 AND ...
+            attrQueryHelper->>bloomreachService: call({fq, sort, rows:48})
+            bloomreachService->>BloomreachAPI: GET /?fq=job_type:"electrical" AND toe_shape:"Composite" AND ...
             BloomreachAPI-->>bloomreachService: JSON {response: {docs: [...]}}
             bloomreachService-->>attrQueryHelper: parsed response
-            attrQueryHelper-->>WorkCtrl: bloomreachResponse (or null)
+            attrQueryHelper-->>GenerateTP: bloomreachResponse (or null)
 
-            WorkCtrl->>WorkCtrl: map docs → [{vgId, name(doc.title), image(doc.thumb_image), price}]<br/>via bloomreachIdentity.fromBloomreachHit()
+            alt bloomreachResponse null (service failure)
+                GenerateTP->>GenerateTP: errors++ , continue to next combination
+            else success
+                GenerateTP->>identity: fromBloomreachHit(doc) per doc
+                identity-->>GenerateTP: {vgId, skuId} per doc
+                GenerateTP->>GenerateTP: buildSchemaOrgMarkup(combo, docs)<br/>→ schema.org ItemList JSON-LD
 
-            WorkCtrl->>PageMgr: getPage('work-joblanding-electrical')
-            PageMgr-->>WorkCtrl: contentPage (Page Designer content zone)
+                alt DryRun = true
+                    GenerateTP->>GenerateTP: log "[DryRun] would set online=<bool>, N products"
+                    Note over GenerateTP: No write to ContentMgr
+                else DryRun = false
+                    GenerateTP->>Transaction: wrap()
+                    Transaction->>ContentMgr: getContent("work-electrical-composite-...")
+                    alt Content asset does not exist
+                        ContentMgr-->>Transaction: null
+                        Transaction->>ContentMgr: getFolder("work-thematic-pages")
+                        alt folder is null
+                            ContentMgr-->>Transaction: null
+                            Transaction->>Transaction: log.error("folder does not exist — skip")
+                        else folder found
+                            ContentMgr-->>Transaction: folder
+                            Transaction->>ContentMgr: createContent(contentId)
+                            Transaction->>ContentMgr: folder.assignContent(content)
+                        end
+                    else exists
+                        ContentMgr-->>Transaction: content
+                    end
+                    Transaction->>Transaction: content.setOnline(docs.length > 0)<br/>(offline = no in-stock products&#59; protects SEO)
+                    alt has products
+                        Transaction->>Transaction: content.custom.body = schemaOrgJSON<br/>content.custom.productCount = docs.length
+                    end
+                    Transaction-->>GenerateTP: committed
+                end
+                GenerateTP->>GenerateTP: processed++
+            end
+        end
 
-            WorkCtrl-->>Browser: render work/jobLanding<br/>{jobType, products[], contentPage,<br/>serviceFailed: bloomreachResponse===null}
+        alt exception thrown
+            GenerateTP->>GenerateTP: errors++<br/>log.error("Failed processing combination {key}: {message}")
         end
     end
-```
 
----
+    GenerateTP->>GenerateTP: log summary (processed, errors, dryRun)
+    alt errors > 0 AND processed == 0
+        GenerateTP-->>SFCCJob: Status.ERROR ("All combinations failed")
+    else
+        GenerateTP-->>SFCCJob: Status.OK ("N combinations processed, M errors")
+    end
 
 ## 8. Loomi Conversational Search (Feature-Flagged Stub)
 
