@@ -10,6 +10,7 @@ var identity = require('*/cartridge/scripts/helpers/bloomreachIdentity');
 var featureFlags = require('*/cartridge/scripts/helpers/featureFlags');
 var bloomreachLogger = require('*/cartridge/scripts/helpers/bloomreachLogger');
 var thematicPageLookup = require('*/cartridge/scripts/helpers/thematicPageLookup');
+var dwSearchFallbackHelper = require('*/cartridge/scripts/helpers/dwSearchFallbackHelper');
 
 var FEATURE = 'BootFinder';
 
@@ -75,12 +76,25 @@ server.get('Results', interactiveCache.applyNoCache, function (req, res, next) {
     }
 
     if (!docs) {
-        var bloomreachResponse = attributeQueryHelper.queryByAttributes({
+        var queryParams = {
             answers: answers,
             reviewCountBoostEnabled: featureFlags.isEnabled('REVIEW_COUNT_BOOST'),
             salesRankTiebreakEnabled: featureFlags.isEnabled('SALES_RANK_TIEBREAK'),
             rows: 24
-        }, FEATURE);
+        };
+        var bloomreachResponse = attributeQueryHelper.queryByAttributes(queryParams, FEATURE);
+
+        // Bloomreach unreachable - fall back to SFCC's native product search
+        // rather than a 502, since a live shopper is waiting. See
+        // helpers/dwSearchFallbackHelper for the accepted degradation
+        // (hard filters only, no range-answer support).
+        if (!bloomreachResponse) {
+            try {
+                bloomreachResponse = dwSearchFallbackHelper.queryByAttributes(queryParams);
+            } catch (e) {
+                bloomreachLogger.logWarn(FEATURE, 'dw search fallback failed', { error: e.message });
+            }
+        }
 
         if (!bloomreachResponse) {
             res.setStatusCode(502);

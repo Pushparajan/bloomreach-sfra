@@ -126,9 +126,17 @@ Two cache middlewares control how pages are served:
 ### 3.5 Error Handling Pattern
 
 All features follow the same pattern:
-1. If the Bloomreach service returns an error → render a graceful error template with HTTP `502 Bad Gateway`.
+1. If the Bloomreach service returns an error, the three live shopper-facing routes (Boot Finder Results, Work Job Landing, Compare-Show) fall back to `helpers/dwSearchFallbackHelper` — SFCC's native `ProductSearchModel`/`ProductMgr` — instead of failing immediately. Only if that fallback also fails (or throws) does the route render a graceful error template with HTTP `502 Bad Gateway`. See §3.6 below.
 2. Sensitive values (credentials) are stripped from all log messages before writing.
 3. No error is surfaced as an uncaught exception — shoppers always see a human-readable fallback.
+
+### 3.6 dw Search Fallback
+
+`helpers/dwSearchFallbackHelper` maps SFCC product search/lookup results into the same doc shape a Bloomreach hit has (`pid`, `title`, `thumb_image`, `price`, every field in `bloomreachConstants.ATTRIBUTES`, `bvRating`, `bvReviewCount`), so nothing downstream — rationale chips, `compareModel`, thematic markup — needs to know or care which source produced the docs.
+
+- **Scope:** only the three live routes use it. `GenerateThematicPages` (the nightly batch job) deliberately does not — a stale-but-valid page from the last successful run is a better outcome for a background job than a same-run substitute, so it keeps its existing skip-and-log-error behavior.
+- **Accepted degradation:** SFCC's attribute refinement (`ProductSearchModel.addRefinementValues`) has no boost concept, so every answer becomes a hard filter in the fallback — Bloomreach's soft-boosted questions (shaft height, waterproof, insulation) may narrow results more strictly than usual. Range answers (e.g. `shaft_height_in` as `{min, max}`) aren't refinable this way and are skipped entirely rather than guessed at. Ranking is reproduced by sorting the mapped docs by `bvRating` (then `bvReviewCount`/`sales_rank_bucket` per the same feature flags the live query uses) rather than a Business Manager Sorting Rule, since no such rule is assumed to exist.
+- **ASSUMPTION:** every `ATTRIBUTES` field name and `bvRating`/`bvReviewCount` are real, refinable SFCC Product custom/system attribute IDs (plausible for `bvRating`/`bvReviewCount` given a Bazaarvoice-style integration already syncs review data onto Product). Verify against the real catalog before shipping; only this module needs to change if the IDs differ.
 
 ---
 
@@ -227,6 +235,8 @@ When enabled via the `lowStockBuryThreshold` site preference, the integration au
 
 **Error handling, per [Bloomreach's documented Thematic API error handling](https://documentation.bloomreach.com/discovery/reference/error-handling-for-the-thematic-api):** a missing/unmatched combination ("bad theme name"), an offline page, a parse failure, or **zero stored products** are all treated identically as "not available" and fall back to the live query - the doc is explicit that zero products must trigger the fallback path, never render as a valid empty result, which is also why `GenerateThematicPages` takes a zero-product combination's page offline rather than publishing it. Our reuse layer never calls Bloomreach's Thematic API live and never renders a customer-facing page directly, so the doc's timeout/redirect-to-homepage guidance doesn't apply here - a lookup failure just means "run the live query," not "show an error page."
 
+**If the live query itself fails** (Bloomreach unreachable), Boot Finder falls back a second time - to SFCC's native search via `helpers/dwSearchFallbackHelper` - before ever showing the 502 error template. See §3.6.
+
 **Questions the finder can ask:**
 
 | Question | Field | Flag | Always Active? |
@@ -279,6 +289,8 @@ When enabled via the `lowStockBuryThreshold` site preference, the integration au
 
 **Thematic Page fallback:** `helpers/thematicPageLookup.findDocsByCombinationKey` looks up the exact Thematic Page by key and returns its stored `productData` only when every requested ID is present in it; a partial match (e.g. the shopper added a product from elsewhere on the site) or any lookup failure falls back to the normal live Bloomreach call automatically. Comparisons started anywhere other than a Thematic Page (PLP, Boot Finder) always use the live call, since there's no `theme` param to look up.
 
+**If the live Bloomreach call itself fails**, Compare-Show falls back a second time - to SFCC's native product lookup via `helpers/dwSearchFallbackHelper` - before showing the 502 error template. See §3.6.
+
 **Attribute rows shown** (feature-flagged rows excluded if their flag is off):
 - Product name, image, price
 - Safety toe type, toe shape, shaft height
@@ -297,10 +309,12 @@ When enabled via the `lowStockBuryThreshold` site preference, the integration au
 1. Shopper lands on /Work-JobLanding?jobType=electrical (or equivalent SEO-friendly URL).
 2. Server validates the job type is known and the JOB_TYPE feature flag is on.
 3. Server queries Bloomreach for products matching that job type (soft-boosted, not hard-filtered).
-4. Server also attempts to load a Page Designer content page named "work-joblanding-{slug}".
-5. Template renders: editorial content zone (if found) + H1 heading + product grid.
-6. If Bloomreach fails → shows an error message but page still loads.
-7. If no products found → shows a "no products" message.
+4. If that query fails (Bloomreach unreachable), server falls back to SFCC's native search via
+   `helpers/dwSearchFallbackHelper` (see §3.6) before treating it as a service failure.
+5. Server also attempts to load a Page Designer content page named "work-joblanding-{slug}".
+6. Template renders: editorial content zone (if found) + H1 heading + product grid.
+7. If both Bloomreach and the dw search fallback fail → shows an error message but page still loads.
+8. If no products found → shows a "no products" message.
 ```
 
 **Caching:** This page uses standard SFCC page cache, so repeat visitors and crawlers benefit from cached HTML. Unlike Boot Finder, there is no personalized state.

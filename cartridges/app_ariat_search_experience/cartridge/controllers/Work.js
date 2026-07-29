@@ -6,6 +6,8 @@ var jobTypeHelper = require('*/cartridge/scripts/shared/jobTypeHelper');
 var attributeQueryHelper = require('*/cartridge/scripts/helpers/bloomreachAttributeQueryHelper');
 var identity = require('*/cartridge/scripts/helpers/bloomreachIdentity');
 var featureFlags = require('*/cartridge/scripts/helpers/featureFlags');
+var bloomreachLogger = require('*/cartridge/scripts/helpers/bloomreachLogger');
+var dwSearchFallbackHelper = require('*/cartridge/scripts/helpers/dwSearchFallbackHelper');
 var PageMgr = require('dw/experience/PageMgr');
 
 var FEATURE = 'WorkJobLanding';
@@ -30,13 +32,26 @@ server.get('JobLanding', cache.applyDefaultCache, function (req, res, next) {
         return;
     }
 
-    var bloomreachResponse = attributeQueryHelper.queryByAttributes({
+    var queryParams = {
         answers: jobTypeHelper.toAnswerFilter(jobType.value),
         hardFields: [], // soft-boosted, same shape as Boot Finder Q1 rather than a hard filter-only page
         reviewCountBoostEnabled: featureFlags.isEnabled('REVIEW_COUNT_BOOST'),
         salesRankTiebreakEnabled: featureFlags.isEnabled('SALES_RANK_TIEBREAK'),
         rows: 30
-    }, FEATURE);
+    };
+    var bloomreachResponse = attributeQueryHelper.queryByAttributes(queryParams, FEATURE);
+
+    // Bloomreach unreachable - fall back to SFCC's native product search
+    // rather than showing the service-failure message, since a live
+    // shopper is waiting. See helpers/dwSearchFallbackHelper for the
+    // accepted degradation (hard filters only, no range-answer support).
+    if (!bloomreachResponse) {
+        try {
+            bloomreachResponse = dwSearchFallbackHelper.queryByAttributes(queryParams);
+        } catch (e) {
+            bloomreachLogger.logWarn(FEATURE, 'dw search fallback failed', { error: e.message });
+        }
+    }
 
     var docs = bloomreachResponse && bloomreachResponse.response ? bloomreachResponse.response.docs : [];
     var products = (docs || []).map(function (doc) {
