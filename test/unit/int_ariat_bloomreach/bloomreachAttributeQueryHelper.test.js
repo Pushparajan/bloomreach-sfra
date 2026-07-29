@@ -97,6 +97,24 @@ describe('int_ariat_bloomreach/helpers/bloomreachAttributeQueryHelper', function
             assert.equal(serviceCall.firstCall.args[0].sort, 'bvRating,bvReviewCount,sales_rank_bucket desc');
         });
 
+        it('includes user_id in the request when the caller passes one (e.g. Boot Finder for a logged-in shopper)', function () {
+            var serviceCall = sinon.stub().returns({ response: { docs: [] } });
+            var loaded = load({ serviceCall: serviceCall });
+
+            loaded.mod.queryByAttributes({ answers: {}, userId: 'cust-123' }, 'BootFinder');
+
+            assert.equal(serviceCall.firstCall.args[0].user_id, 'cust-123');
+        });
+
+        it('omits user_id entirely when the caller does not pass one (e.g. Work-JobLanding, or an anonymous shopper)', function () {
+            var serviceCall = sinon.stub().returns({ response: { docs: [] } });
+            var loaded = load({ serviceCall: serviceCall });
+
+            loaded.mod.queryByAttributes({ answers: {} }, 'WorkJobLanding');
+
+            assert.isUndefined(serviceCall.firstCall.args[0].user_id);
+        });
+
         it('service failure: logs and returns null instead of throwing or returning unrelated data', function () {
             var error = new Error('timeout');
             var serviceCall = sinon.stub().throws(error);

@@ -85,6 +85,14 @@ function buildFilterQueries(answers, options) {
  * @param {boolean} [params.salesRankTiebreakEnabled]
  * @param {number} [params.start]
  * @param {number} [params.rows]
+ * @param {string} [params.userId] - R-38: 1:1-personalization shopper id
+ *   (see helpers/bloomreachPersonalizationIdentity, gated on
+ *   personalization.oneToOne.enabled). Boot Finder and Work-JobLanding's
+ *   PersonalizedStrip fragment pass this - Work-JobLanding's own shell must
+ *   not, per the integration spec's exclusion of the shell from
+ *   personalization; omitting it (leaving undefined) is how a caller opts
+ *   out, since bloomreachService drops undefined params before sending the
+ *   request.
  * @param {string} feature - logging context, e.g. 'BootFinder', 'WorkJobLanding'
  * @returns {Object|null} parsed Bloomreach response, or null on failure
  */
@@ -99,7 +107,8 @@ function queryByAttributes(params, feature) {
         fq: fq.join(' AND '),
         sort: sortField + ' desc',
         start: params.start || 0,
-        rows: params.rows || 24
+        rows: params.rows || 24,
+        user_id: params.userId
     };
 
     try {

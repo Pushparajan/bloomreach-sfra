@@ -49,7 +49,17 @@ module.exports = {
         INSULATION_QUESTION: 'finderInsulationQuestionEnabled', // finder.insulationQuestion.enabled
         REVIEW_COUNT_BOOST: 'finderReviewCountBoostEnabled', // finder.reviewCountBoost.enabled
         SALES_RANK_TIEBREAK: 'finderSalesRankTiebreakEnabled', // finder.salesRankTiebreak.enabled
-        LOOMI_ENABLED: 'loomiEnabled' // loomi.enabled
+        LOOMI_ENABLED: 'loomiEnabled', // loomi.enabled
+        // R-38: master switch for 1:1 (individual-level) Bloomreach
+        // personalization. MUST default false (see featureFlags.isEnabled -
+        // an unset preference already resolves to false). Do NOT flip this
+        // on without (a) a confirmed Bloomreach license tier covering
+        // individual-level personalization and (b) a privacy/legal consent
+        // classification for sending an identifier to Bloomreach for
+        // individual profiling - these are business/legal gates, not
+        // engineering ones, and are explicitly out of scope for this flag's
+        // existence. See helpers/bloomreachPersonalizationIdentity.
+        PERSONALIZATION_ONE_TO_ONE: 'personalizationOneToOneEnabled' // personalization.oneToOne.enabled
     },
 
     // Short-TTL cache (minutes) for stateful/per-request routes (Boot Finder,

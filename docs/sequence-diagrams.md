@@ -797,14 +797,25 @@ flowchart TD
 ## 12. Logged-In vs Anonymous User Flows
 
 > **Business context:** The Bloomreach integration serves both registered shoppers
-> (logged-in customers with a saved SFCC profile) and anonymous / guest shoppers equally
-> well today. The code intentionally makes no API-level distinction between the two because
-> Bloomreach personalisation via `user_id` has not been activated. The important
-> differences are instead at the **SFCC cache layer** (which routes are shared-cacheable
-> vs per-session) and in **browser storage** (where Boot Finder and Compare state is
-> held). This section maps those differences explicitly so future work — such as
-> persisting Boot Finder preferences to a customer profile, or passing a `user_id` to
-> Bloomreach for personalised ranking — has a clear baseline to build from.
+> (logged-in customers with a saved SFCC profile) and anonymous / guest shoppers.
+> Boot Finder, the Comparison Tool, and Work-JobLanding's `PersonalizedStrip`
+> fragment can pass the logged-in shopper's `user_id` to Bloomreach for 1:1
+> (individual-level) personalised ranking (R-38, via
+> `helpers/bloomreachPersonalizationIdentity.resolveShopperIdentity` - resolved
+> from `req.currentCustomer.raw`) - but **only when the `personalization
+> .oneToOne.enabled` flag is on AND the shopper is authenticated**. That flag
+> defaults `false` and has business/legal prerequisites before it may ever be
+> turned on (a confirmed Bloomreach license tier for individual-level
+> personalization, and a privacy/legal consent classification for this specific
+> data flow) - see `docs/TECHNO_FUNCTIONAL_GUIDE.md` §7.4. Work-JobLanding's own
+> shell and free-text Search/Autosuggest are explicitly excluded regardless of
+> the flag, since both are shared, cacheable routes not meant to vary per
+> shopper (see §12a). Beyond that one distinction, the remaining differences are
+> at the **SFCC cache layer** (which routes are shared-cacheable vs
+> per-session) and in **browser storage** (where Boot Finder and Compare state
+> is held) - this section maps those differences explicitly so future work
+> (e.g. persisting Boot Finder preferences to a customer profile) has a clear
+> baseline to build from.
 
 ### 12a. Cache & Personalization Behaviour by Route
 
@@ -860,12 +871,12 @@ sequenceDiagram
     Note over User,CustomerProfile: Results fetch
 
     bootFinderJS->>SFCCSession: GET /BootFinder-Results?answers=<JSON>
-    Note over SFCCSession: req.currentCustomer is available<br/>but NOT read by BootFinder controller.<br/>Same code path for anonymous & logged-in.
+    SFCCSession->>SFCCSession: bloomreachPersonalizationIdentity.resolveShopperIdentity(req.currentCustomer.raw)<br/>(R-38 - null userId unless personalization.oneToOne.enabled is on)
 
-    alt Anonymous shopper
-        SFCCSession-->>bootFinderJS: resultsGrid HTML<br/>(no customer context used)
-    else Logged-in shopper
-        SFCCSession-->>bootFinderJS: resultsGrid HTML<br/>(customer profile available but not consulted —<br/>identical Bloomreach query to anonymous path)
+    alt Anonymous shopper, OR flag off
+        SFCCSession-->>bootFinderJS: resultsGrid HTML<br/>(user_id omitted)
+    else Logged-in shopper AND flag on
+        SFCCSession-->>bootFinderJS: resultsGrid HTML<br/>(user_id=Customer.ID sent to Bloomreach<br/>for 1:1 personalised ranking - see §12d)
     end
 
     Note over User,CustomerProfile: 🔮 Future opportunity:<br/>For logged-in users, persist answers{} to<br/>CustomerProfile so Boot Finder remembers<br/>preferences across sessions / devices.
@@ -892,59 +903,75 @@ sequenceDiagram
     User->>compareJS: click [data-compare-view]
     compareJS->>sessionStorage: getItem → selected ids (≥ 2 required)
 
-    alt Anonymous shopper
-        compareJS->>compareJS: navigate to /Compare-Show?pids=...<br/>(selection lost if tab closed before viewing)
-    else Logged-in shopper
-        compareJS->>compareJS: navigate to /Compare-Show?pids=...<br/>(same behaviour — no cross-device persistence today)
+    alt Anonymous shopper, OR flag off
+        compareJS->>compareJS: navigate to /Compare-Show?pids=...<br/>(selection lost if tab closed before viewing;<br/>user_id omitted)
+    else Logged-in shopper AND personalization.oneToOne.enabled is on
+        compareJS->>compareJS: navigate to /Compare-Show?pids=...<br/>(no cross-device persistence today, but<br/>user_id=Customer.ID sent to Bloomreach<br/>for this lookup - see §12d)
     end
 
     Note over compareJS,CustomerProfile: 🔮 Future opportunity:<br/>For logged-in users, sync selection to<br/>CustomerProfile (e.g. wish-list / save-for-later)<br/>so compare set survives browser close.
 ```
 
-### 12d. Bloomreach Query Layer – No User-Level Personalisation Today
+### 12d. Bloomreach Query Layer – user_id Sent for Boot Finder, Compare & the Work Personalized-Strip Fragment Only, Gated on R-38's Master Flag
 
-> Every Bloomreach API call in this integration is constructed identically
-> regardless of login state. The `user_id` personalisation parameter that
-> Bloomreach Discovery supports is not currently populated. All ranking is
-> driven by the attribute-match boosts, review ratings, and inventory-bury
-> logic documented in the earlier sections.
+> `helpers/bloomreachPersonalizationIdentity.resolveShopperIdentity(currentCustomer)`
+> resolves `{ userId, isLoggedIn }`. `userId` is `dw.customer.Customer.ID`
+> **only when both** `personalization.oneToOne.enabled` (R-38, default `false`,
+> gated on business/legal prerequisites - see TECHNO_FUNCTIONAL_GUIDE.md §7.4)
+> **and** `currentCustomer.authenticated` are true; otherwise `null`. The flag
+> check lives INSIDE this one function, not at each call site, so no future
+> call site can leak a `user_id` while the flag is off. Boot Finder Results,
+> Compare-Show, and Work-JobLanding's separate `PersonalizedStrip` fragment
+> each pass this into their query helper's `userId`/third-arg param; the
+> helper only adds `user_id` to the request when a value is present
+> (`bloomreachService` drops `undefined` params before sending), so a
+> guest's or flag-off request is byte-for-byte the same as before this
+> feature existed. Work-JobLanding's own SHELL and free-text Search/
+> Autosuggest never call `resolveShopperIdentity` at all - they are shared,
+> cacheable routes not meant to vary per shopper, so they are excluded by
+> omission rather than a runtime check.
 
 ```mermaid
 flowchart LR
-    subgraph ANON["Anonymous Shopper"]
+    subgraph ANON["Anonymous Shopper, or flag off"]
         A1["Boot Finder answers\n(in-memory only)"]
         A2["Compare pids\n(sessionStorage)"]
-        A3["Job Landing jobType\n(URL param)"]
+        A3["Job Landing shell\n(jobType URL param)"]
     end
 
-    subgraph LI["Logged-In Shopper"]
+    subgraph LI["Logged-In Shopper AND\npersonalization.oneToOne.enabled = true"]
         L1["Boot Finder answers\n(in-memory only)"]
         L2["Compare pids\n(sessionStorage)"]
-        L3["Job Landing jobType\n(URL param)"]
+        L3["Job Landing PersonalizedStrip\nfragment (client-fetched)"]
     end
 
-    subgraph QUERY["bloomreachAttributeQueryHelper\n/ bloomreachService"]
-        Q1["fq= (attribute filters)\nsort= (rating + tiebreaks)\nrequest_id= Date.now()\naccount_id / auth_key / domain_key\n─────────────────────────────────\n❌ user_id NOT sent today\n(no Bloomreach personalisation active)"]
+    subgraph IDENTITY["bloomreachPersonalizationIdentity"]
+        ID1["resolveShopperIdentity(req.currentCustomer.raw)\n→ {userId: Customer.ID, isLoggedIn: true}\nonly if flag on AND authenticated,\nelse {userId: null, ...}"]
+    end
+
+    subgraph QUERY["bloomreachAttributeQueryHelper /\nbloomreachProductLookupHelper / bloomreachService"]
+        Q1["fq= (attribute filters)\nsort= (rating + tiebreaks)\nrequest_id= Date.now()\naccount_id / auth_key / domain_key\nuser_id= (Boot Finder / Compare /\nWork PersonalizedStrip only,\nomitted entirely if null)"]
     end
 
     subgraph BR["Bloomreach Discovery API"]
-        B1["Returns ranked product docs\nbased on attribute match\n+ review scores\n+ inventory bury\n(same result set for both\nuser types given same inputs)"]
+        B1["Returns ranked product docs\nbased on attribute match\n+ review scores\n+ inventory bury\n+ user_id-based 1:1 personalisation\n(only where eligible)"]
     end
 
-    A1 & A2 & A3 --> Q1
-    L1 & L2 & L3 --> Q1
-    Q1 --> B1
+    L1 & L2 & L3 -.->|"eligible"| ID1
+    ID1 --> Q1
+    A1 & A2 --> Q1
+    A3 -->|"shell never calls resolveShopperIdentity"| Q1
 
-    Note1["🔮 Future: pass user_id=CustomerMgr.getCustomerByLogin().ID\nfor Bloomreach-side personalised ranking\n(requires Bloomreach personalisation licence)"]
-    B1 -.->|"future"| Note1
+    Q1 --> B1
 ```
 
 ### 12e. Summary – Current Behaviour Matrix
 
 | Feature | Cache tier | Dismissal / selection storage | Bloomreach `user_id`? | Logged-in extras |
 |---|---|---|---|---|
-| Boot Finder Show | `personalized=true`, no shared cache | N/A | ❌ Not sent | None (same code path) |
-| Boot Finder Results | `personalized=true`, no shared cache | In-memory JS state (lost on navigate away) | ❌ Not sent | None (same code path) |
-| Compare Show | `personalized=true`, no shared cache | `sessionStorage` (tab-scoped) | ❌ Not sent | None (same code path) |
-| Work / Job Landing | Standard page cache (CDN-eligible) | N/A | ❌ Not sent | SFCC may segment cache by customer context |
-| Free-Text Search / Suggest | Standard SFRA cache rules | N/A | ❌ Not sent | Standard SFRA auth rules apply |
+| Boot Finder Show | `personalized=true`, no shared cache | N/A | N/A (no Bloomreach call on Show) | None (same code path) |
+| Boot Finder Results | `personalized=true`, no shared cache | In-memory JS state (lost on navigate away) | ✅ Sent when flag on AND authenticated | `user_id=Customer.ID` sent to Bloomreach |
+| Compare Show | `personalized=true`, no shared cache | `sessionStorage` (tab-scoped) | ✅ Sent when flag on AND authenticated | `user_id=Customer.ID` sent to Bloomreach |
+| Work / Job Landing (shell) | Standard page cache (CDN-eligible) | N/A | ❌ Never sent (shell excluded by spec) | SFCC may segment cache by customer context |
+| Work `PersonalizedStrip` (fragment) | No shared cache (R-38) | N/A | ✅ Sent when flag on AND authenticated | Falls back to the existing segment-level content zone otherwise |
+| Free-Text Search / Suggest | Standard SFRA cache rules | N/A | ❌ Not sent (excluded by spec) | Standard SFRA auth rules apply |

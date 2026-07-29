@@ -1,0 +1,31 @@
+<!---
+    R-38: 1:1-personalized content-zone fragment, rendered by Work-PersonalizedStrip.
+    Renders exactly ONE of:
+      - pdict.personalized === true: a small Bloomreach-personalized product strip
+        (flag on, logged in, Bloomreach call succeeded).
+      - pdict.contentPage: the EXISTING segment-level Page Designer content zone,
+        unchanged - the fallback for flag-off, guest, or any personalization
+        failure. Never an error state.
+      - neither: nothing renders (e.g. unknown job type) - the shell's own
+        placeholder simply stays empty/collapsed in this case.
+--->
+<isif condition="${pdict.personalized}">
+    <div class="work-job-landing__personalized-strip" data-personalized="true">
+        <h2 class="work-job-landing__personalized-strip-title">
+            ${Resource.msg('work.joblanding.personalized.title', 'work', 'Recommended for You')}
+        </h2>
+        <div class="product-grid work-job-landing__personalized-strip-grid">
+            <isloop items="${pdict.products}" var="product">
+                <div class="product-tile" data-vg-id="${product.vgId}">
+                    <a href="${URLUtils.url('Product-Show', 'pid', product.vgId)}">
+                        <img src="${product.image}" alt="${product.name}" />
+                        <div class="product-tile__name">${product.name}</div>
+                        <div class="product-tile__price">${product.price}</div>
+                    </a>
+                </div>
+            </isloop>
+        </div>
+    </div>
+<iselseif condition="${pdict.contentPage}">
+    <isreplace componentcontext="${pdict.contentPage}">
+</isif>

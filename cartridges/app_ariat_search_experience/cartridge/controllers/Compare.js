@@ -7,6 +7,7 @@ var compareModel = require('*/cartridge/scripts/compare/compareModel');
 var bloomreachLogger = require('*/cartridge/scripts/helpers/bloomreachLogger');
 var thematicPageLookup = require('*/cartridge/scripts/helpers/thematicPageLookup');
 var dwSearchFallbackHelper = require('*/cartridge/scripts/helpers/dwSearchFallbackHelper');
+var bloomreachPersonalizationIdentity = require('*/cartridge/scripts/helpers/bloomreachPersonalizationIdentity');
 
 var FEATURE = 'Compare';
 
@@ -48,9 +49,16 @@ server.get('Show', interactiveCache.applyNoCache, function (req, res, next) {
     }
 
     if (!docs) {
+        // 1:1 personalization — gated on personalization.oneToOne.enabled,
+        // see R-38. resolveShopperIdentity returns a null userId whenever
+        // the flag is off, the shopper is a guest, or identity is ambiguous
+        // - Work-JobLanding's shell and Search are excluded by never calling
+        // this helper at all (see helpers/bloomreachPersonalizationIdentity).
+        var userId = bloomreachPersonalizationIdentity
+            .resolveShopperIdentity(req.currentCustomer && req.currentCustomer.raw).userId;
         var bloomreachResponse;
         try {
-            bloomreachResponse = productLookupHelper.lookupByIds(vgIds, FEATURE);
+            bloomreachResponse = productLookupHelper.lookupByIds(vgIds, FEATURE, userId);
         } catch (e) {
             bloomreachLogger.logServiceFailure(FEATURE, e, { vgIds: vgIds });
             bloomreachResponse = null;

@@ -1,8 +1,17 @@
 <isdecorate template="common/layout/page">
     <div class="work-job-landing" data-job-type="${pdict.jobType.value}">
-        <isif condition="${pdict.contentPage}">
-            <isreplace componentcontext="${pdict.contentPage}">
-        </isif>
+        <!---
+            R-38: the content-zone slot (segment-level today, potentially
+            1:1-personalized when the flag is on) is fetched client-side from
+            Work-PersonalizedStrip rather than rendered inline, so this shell
+            stays fully cacheable (cache.applyDefaultCache, unchanged) - see
+            controllers/Work.js's PersonalizedStrip route and
+            client/default/js/work/jobLandingPersonalizedStrip.js.
+        --->
+        <div class="work-job-landing__personalized-strip-placeholder"
+             data-personalized-strip-url="${pdict.personalizedStripUrl}">
+            <div class="work-job-landing__personalized-strip-skeleton" aria-hidden="true"></div>
+        </div>
 
         <h1 class="work-job-landing__title">${pdict.jobType.label} Boots</h1>
 
