@@ -787,3 +787,160 @@ flowchart TD
     S2 -->|yes| SC["append ,sales_rank_bucket desc"]
     S2 -->|no| SD["sort unchanged"]
 ```
+
+---
+
+## 12. Logged-In vs Anonymous User Flows
+
+> **Business context:** The Bloomreach integration serves both registered shoppers
+> (logged-in customers with a saved SFCC profile) and anonymous / guest shoppers equally
+> well today. The code intentionally makes no API-level distinction between the two because
+> Bloomreach personalisation via `user_id` has not been activated. The important
+> differences are instead at the **SFCC cache layer** (which routes are shared-cacheable
+> vs per-session) and in **browser storage** (where Boot Finder and Compare state is
+> held). This section maps those differences explicitly so future work — such as
+> persisting Boot Finder preferences to a customer profile, or passing a `user_id` to
+> Bloomreach for personalised ranking — has a clear baseline to build from.
+
+### 12a. Cache & Personalization Behaviour by Route
+
+> Which HTTP responses SFCC/CDN may serve from a shared cache vs must always
+> generate fresh. `personalized: true` tells SFCC's page-cache infrastructure that the
+> response must never be shared across shoppers.
+
+```mermaid
+flowchart TD
+    Browser([Shopper request])
+
+    Browser --> BF["BootFinder-Show\nBootFinder-Results"]
+    Browser --> CP["Compare-Show"]
+    Browser --> WK["Work-JobLanding"]
+    Browser --> SRCH["Search / Autosuggest\n(existing SFRA routes)"]
+
+    BF --> BF_CACHE["interactiveCache.applyNoCache\ncachePeriod = 0 min\npersonalized = true\n─────────────────────────\n🔴 Never shared-cached\nSame behaviour for\nlogged-in & anonymous"]
+
+    CP --> CP_CACHE["interactiveCache.applyNoCache\ncachePeriod = 0 min\npersonalized = true\n─────────────────────────\n🔴 Never shared-cached\nSame behaviour for\nlogged-in & anonymous"]
+
+    WK --> WK_CACHE["cache.applyDefaultCache\n(standard SFRA TTL)\n─────────────────────────\n🟢 CDN / page-cache eligible\nAnonymous: may be served\nfrom shared cache\nLogged-in: SFCC segments\ncache by customer context"]
+
+    SRCH --> SRCH_CACHE["Standard SFRA caching\n(unchanged by this integration)\n─────────────────────────\n🟢 Subject to normal\nSFRA cache rules"]
+```
+
+### 12b. Boot Finder – Entry Card Dismissal & Answer Persistence
+
+> Both anonymous and logged-in shoppers use `sessionStorage` for all Boot Finder
+> client state. There is currently no server-side persistence of answers or the
+> dismissal flag to a customer profile.
+
+```mermaid
+sequenceDiagram
+    participant User
+    participant bootFinderJS as bootFinder.js<br/>(Client)
+    participant sessionStorage as browser sessionStorage
+    participant SFCCSession as SFCC Session<br/>(req.currentCustomer)
+    participant CustomerProfile as Customer Profile<br/>(SFCC — registered only)
+
+    Note over User,CustomerProfile: Entry card dismissal
+
+    User->>bootFinderJS: click [data-dismiss-boot-finder]
+    bootFinderJS->>sessionStorage: setItem('boot-finder-entry-dismissed', 'true')
+    Note over sessionStorage: ⚠️ sessionStorage is tab-scoped:<br/>flag is lost on browser close for<br/>BOTH anonymous and logged-in users.<br/>No write to CustomerProfile today.
+
+    Note over User,CustomerProfile: Answer accumulation during the questionnaire
+
+    loop Per answered question
+        bootFinderJS->>bootFinderJS: recordAnswer(question, value)<br/>accumulates into in-memory state.answers{}
+        Note over bootFinderJS: Answers live only in JS memory<br/>for the current page session —<br/>no sessionStorage write, no server write.
+    end
+
+    Note over User,CustomerProfile: Results fetch
+
+    bootFinderJS->>SFCCSession: GET /BootFinder-Results?answers=<JSON>
+    Note over SFCCSession: req.currentCustomer is available<br/>but NOT read by BootFinder controller.<br/>Same code path for anonymous & logged-in.
+
+    alt Anonymous shopper
+        SFCCSession-->>bootFinderJS: resultsGrid HTML<br/>(no customer context used)
+    else Logged-in shopper
+        SFCCSession-->>bootFinderJS: resultsGrid HTML<br/>(customer profile available but not consulted —<br/>identical Bloomreach query to anonymous path)
+    end
+
+    Note over User,CustomerProfile: 🔮 Future opportunity:<br/>For logged-in users, persist answers{} to<br/>CustomerProfile so Boot Finder remembers<br/>preferences across sessions / devices.
+```
+
+### 12c. Compare – Selection Persistence
+
+> Compare selections are stored in `sessionStorage` under the key
+> `'boot-compare-selection'`. They are tab-scoped and not synchronised to a
+> customer profile for either user type.
+
+```mermaid
+sequenceDiagram
+    participant User
+    participant compareJS as compare.js<br/>(Client)
+    participant sessionStorage as browser sessionStorage<br/>('boot-compare-selection')
+    participant CustomerProfile as Customer Profile<br/>(SFCC — registered only)
+
+    User->>compareJS: check [data-compare-select] checkbox (vgId)
+    compareJS->>sessionStorage: getItem('boot-compare-selection') → ids[]
+    compareJS->>sessionStorage: setItem('boot-compare-selection', [...ids, vgId])
+    Note over sessionStorage,CustomerProfile: Selection is tab-scoped sessionStorage<br/>for BOTH anonymous and logged-in users.<br/>No write to CustomerProfile.
+
+    User->>compareJS: click [data-compare-view]
+    compareJS->>sessionStorage: getItem → selected ids (≥ 2 required)
+
+    alt Anonymous shopper
+        compareJS->>compareJS: navigate to /Compare-Show?pids=...<br/>(selection lost if tab closed before viewing)
+    else Logged-in shopper
+        compareJS->>compareJS: navigate to /Compare-Show?pids=...<br/>(same behaviour — no cross-device persistence today)
+    end
+
+    Note over compareJS,CustomerProfile: 🔮 Future opportunity:<br/>For logged-in users, sync selection to<br/>CustomerProfile (e.g. wish-list / save-for-later)<br/>so compare set survives browser close.
+```
+
+### 12d. Bloomreach Query Layer – No User-Level Personalisation Today
+
+> Every Bloomreach API call in this integration is constructed identically
+> regardless of login state. The `user_id` personalisation parameter that
+> Bloomreach Discovery supports is not currently populated. All ranking is
+> driven by the attribute-match boosts, review ratings, and inventory-bury
+> logic documented in the earlier sections.
+
+```mermaid
+flowchart LR
+    subgraph ANON["Anonymous Shopper"]
+        A1["Boot Finder answers\n(in-memory only)"]
+        A2["Compare pids\n(sessionStorage)"]
+        A3["Job Landing jobType\n(URL param)"]
+    end
+
+    subgraph LI["Logged-In Shopper"]
+        L1["Boot Finder answers\n(in-memory only)"]
+        L2["Compare pids\n(sessionStorage)"]
+        L3["Job Landing jobType\n(URL param)"]
+    end
+
+    subgraph QUERY["bloomreachAttributeQueryHelper\n/ bloomreachService"]
+        Q1["fq= (attribute filters)\nsort= (rating + tiebreaks)\nrequest_id= Date.now()\naccount_id / auth_key / domain_key\n─────────────────────────────────\n❌ user_id NOT sent today\n(no Bloomreach personalisation active)"]
+    end
+
+    subgraph BR["Bloomreach Discovery API"]
+        B1["Returns ranked product docs\nbased on attribute match\n+ review scores\n+ inventory bury\n(same result set for both\nuser types given same inputs)"]
+    end
+
+    A1 & A2 & A3 --> Q1
+    L1 & L2 & L3 --> Q1
+    Q1 --> B1
+
+    Note1["🔮 Future: pass user_id=CustomerMgr.getCustomerByLogin().ID\nfor Bloomreach-side personalised ranking\n(requires Bloomreach personalisation licence)"]
+    B1 -.->|"future"| Note1
+```
+
+### 12e. Summary – Current Behaviour Matrix
+
+| Feature | Cache tier | Dismissal / selection storage | Bloomreach `user_id`? | Logged-in extras |
+|---|---|---|---|---|
+| Boot Finder Show | `personalized=true`, no shared cache | N/A | ❌ Not sent | None (same code path) |
+| Boot Finder Results | `personalized=true`, no shared cache | In-memory JS state (lost on navigate away) | ❌ Not sent | None (same code path) |
+| Compare Show | `personalized=true`, no shared cache | `sessionStorage` (tab-scoped) | ❌ Not sent | None (same code path) |
+| Work / Job Landing | Standard page cache (CDN-eligible) | N/A | ❌ Not sent | SFCC may segment cache by customer context |
+| Free-Text Search / Suggest | Standard SFRA cache rules | N/A | ❌ Not sent | Standard SFRA auth rules apply |
