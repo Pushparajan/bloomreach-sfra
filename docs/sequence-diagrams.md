@@ -467,7 +467,7 @@ sequenceDiagram
             else success
                 GenerateTP->>identity: fromBloomreachHit(doc) per doc
                 identity-->>GenerateTP: {vgId, skuId} per doc
-                GenerateTP->>GenerateTP: buildSchemaOrgMarkup(combo, docs)<br/>→ schema.org ItemList JSON-LD
+                GenerateTP->>GenerateTP: buildSchemaOrgMarkup(combo, docs)<br/>→ schema.org ItemList JSON-LD<br/>GenerateTP->>GenerateTP: buildProductGridMarkup(docs)<br/>→ product tiles + compareControl-style checkboxes<br/>+ View Comparison trigger (data-compare-view)
 
                 alt DryRun = true
                     GenerateTP->>GenerateTP: log "[DryRun] would set online=<bool>, N products"
@@ -491,7 +491,7 @@ sequenceDiagram
                     end
                     Transaction->>Transaction: content.setOnline(docs.length > 0)<br/>(offline = no in-stock products&#59; protects SEO)
                     alt has products
-                        Transaction->>Transaction: content.custom.body = schemaOrgJSON<br/>content.custom.productCount = docs.length
+                        Transaction->>Transaction: content.custom.body = schemaOrgScriptTag + productGridHtml<br/>content.custom.productCount = docs.length
                     end
                     Transaction-->>GenerateTP: committed
                 end
@@ -551,10 +551,14 @@ sequenceDiagram
 
 ## 9. Generate Thematic Pages (Batch Job)
 
-**Business context:** An automated overnight job that creates and maintains SEO landing pages for specific product attribute combinations — for example, "Electrical Composite Toe Boots" or "Waterproof Wide-Width Work Boots". A merchandiser maintains a list of desired page combinations in a SFCC Custom Object; the job queries Bloomreach for each combination and either publishes the page (if matching in-stock products exist) or takes it offline (if no products match), ensuring shoppers and search engines never land on an empty page. A "dry run" mode lets teams preview what would be published before making any live changes.
+**Business context:** An automated overnight job that creates and maintains SEO landing pages for specific product attribute combinations — for example, "Electrical Composite Toe Boots" or "Waterproof Wide-Width Work Boots". A merchandiser maintains a list of desired page combinations in a SFCC Custom Object; the job queries Bloomreach for each combination and either publishes the page (if matching in-stock products exist) or takes it offline (if no products match), ensuring shoppers and search engines never land on an empty page. A "dry run" mode lets teams preview what would be published before making any live changes. Each published page also renders a real product grid wired into the existing Comparison Tool, so a shopper can select products straight from the thematic page and compare them.
 
 SFCC Job step that reads a merchandiser-editable combination matrix, queries Bloomreach
-per row, and creates/updates/hides Content assets with schema.org JSON-LD markup.
+per row, and creates/updates/hides Content assets with schema.org JSON-LD markup plus a
+product grid whose checkboxes reuse components/compareControl.isml's markup/data-attributes
+and whose "View Comparison" trigger reuses compare.js's existing data-compare-view contract -
+so the Comparison Tool works on thematic pages via the existing Compare-Show route, with no
+new controller, service, or credentials.
 Runs immediately before the existing "Generate Sitemap" job step.
 
 ```mermaid
@@ -600,7 +604,7 @@ sequenceDiagram
             else success
                 GenerateTP->>identity: fromBloomreachHit(doc) per doc
                 identity-->>GenerateTP: {vgId, skuId} per doc
-                GenerateTP->>GenerateTP: buildSchemaOrgMarkup(combo, docs)<br/>→ schema.org ItemList JSON-LD
+                GenerateTP->>GenerateTP: buildSchemaOrgMarkup(combo, docs)<br/>→ schema.org ItemList JSON-LD<br/>GenerateTP->>GenerateTP: buildProductGridMarkup(docs)<br/>→ product tiles + compareControl-style checkboxes<br/>+ View Comparison trigger (data-compare-view)
 
                 alt DryRun = true
                     GenerateTP->>GenerateTP: log "[DryRun] would set online=<bool>, N products"
@@ -624,7 +628,7 @@ sequenceDiagram
                     end
                     Transaction->>Transaction: content.setOnline(docs.length > 0)<br/>(offline = no in-stock products; protects SEO)
                     alt has products
-                        Transaction->>Transaction: content.custom.body = schemaOrgJSON<br/>content.custom.productCount = docs.length
+                        Transaction->>Transaction: content.custom.body = schemaOrgScriptTag + productGridHtml<br/>content.custom.productCount = docs.length
                     end
                     Transaction-->>GenerateTP: committed
                 end

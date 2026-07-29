@@ -6,6 +6,11 @@ var proxyquire = require('proxyquire').noCallThru();
 
 var MODULE_PATH = '../../../cartridges/int_ariat_bloomreach/cartridge/scripts/jobs/GenerateThematicPages';
 
+function extractSchemaOrgMarkup(body) {
+    var match = /<script type="application\/ld\+json">([\s\S]*?)<\/script>/.exec(body);
+    return match && JSON.parse(match[1]);
+}
+
 function makeCombo(overrides) {
     return Object.assign({
         combinationKey: 'electrical-composite',
@@ -167,9 +172,98 @@ describe('int_ariat_bloomreach/jobs/GenerateThematicPages', function () {
 
         loaded.mod.execute({ DryRun: false });
 
-        var markup = JSON.parse(content.custom.body);
+        var markup = extractSchemaOrgMarkup(content.custom.body);
         assert.include(markup.itemListElement[0].url, 'pid=VG-1');
         assert.notInclude(markup.itemListElement[0].url, 'SKU-1');
+    });
+
+    it('product grid: renders a compare checkbox per product using the VG id, matching compareControl.isml\'s contract', function () {
+        var content = { setOnline: sinon.stub(), custom: {} };
+        var contentMgr = {
+            getContent: sinon.stub().returns(content),
+            getFolder: sinon.stub().returns({ assignContent: sinon.stub() }),
+            createContent: sinon.stub()
+        };
+        var loaded = load({
+            contentMgr: contentMgr,
+            queryByAttributes: sinon.stub().returns({
+                response: {
+                    docs: [
+                        { pid: 'VG-1', sku: 'SKU-1', title: 'Boot A', thumb_image: '/a.jpg', price: 99.99 },
+                        { pid: 'VG-2', sku: 'SKU-2', title: 'Boot B', thumb_image: '/b.jpg', price: 129.99 }
+                    ]
+                }
+            })
+        });
+
+        loaded.mod.execute({ DryRun: false });
+
+        var body = content.custom.body;
+        assert.match(body, /data-compare-select/);
+        assert.include(body, 'data-vg-id="VG-1"');
+        assert.include(body, 'data-vg-id="VG-2"');
+        assert.notInclude(body, 'SKU-1', 'compare checkbox must key off the VG id, never a bare sku');
+        assert.include(body, 'data-name="Boot A"');
+        assert.include(body, 'data-image="/a.jpg"');
+    });
+
+    it('product grid: includes a View Comparison trigger using compare.js\'s existing data-compare-view contract', function () {
+        var content = { setOnline: sinon.stub(), custom: {} };
+        var contentMgr = {
+            getContent: sinon.stub().returns(content),
+            getFolder: sinon.stub().returns({ assignContent: sinon.stub() }),
+            createContent: sinon.stub()
+        };
+        var loaded = load({
+            contentMgr: contentMgr,
+            queryByAttributes: sinon.stub().returns({ response: { docs: [{ pid: 'VG-1', title: 'Boot A' }] } })
+        });
+
+        loaded.mod.execute({ DryRun: false });
+
+        assert.match(content.custom.body, /data-compare-view/);
+        assert.match(content.custom.body, /data-url="[^"]*Compare-Show"/);
+    });
+
+    it('product grid: HTML-escapes product data so a feed value cannot break out of markup', function () {
+        var content = { setOnline: sinon.stub(), custom: {} };
+        var contentMgr = {
+            getContent: sinon.stub().returns(content),
+            getFolder: sinon.stub().returns({ assignContent: sinon.stub() }),
+            createContent: sinon.stub()
+        };
+        var loaded = load({
+            contentMgr: contentMgr,
+            queryByAttributes: sinon.stub().returns({
+                response: { docs: [{ pid: 'VG-1', title: '<script>alert(1)</script>', thumb_image: '"><img>' }] }
+            })
+        });
+
+        loaded.mod.execute({ DryRun: false });
+
+        assert.notInclude(content.custom.body, '<script>alert(1)</script>');
+        assert.notInclude(content.custom.body, '"><img>');
+    });
+
+    it('schema.org JSON-LD: escapes "</script>" in a feed value so it cannot close the surrounding script tag early', function () {
+        var content = { setOnline: sinon.stub(), custom: {} };
+        var contentMgr = {
+            getContent: sinon.stub().returns(content),
+            getFolder: sinon.stub().returns({ assignContent: sinon.stub() }),
+            createContent: sinon.stub()
+        };
+        var loaded = load({
+            contentMgr: contentMgr,
+            queryByAttributes: sinon.stub().returns({
+                response: { docs: [{ pid: 'VG-1', title: '</script><script>alert(1)</script>' }] }
+            })
+        });
+
+        loaded.mod.execute({ DryRun: false });
+
+        assert.notInclude(content.custom.body, '</script><script>alert(1)</script>');
+        var markup = extractSchemaOrgMarkup(content.custom.body);
+        assert.equal(markup.itemListElement[0].name, '</script><script>alert(1)</script>');
     });
 
     it('new content asset: creates and assigns to folder when content does not yet exist', function () {

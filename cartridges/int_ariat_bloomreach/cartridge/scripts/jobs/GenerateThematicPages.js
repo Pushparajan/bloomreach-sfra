@@ -8,12 +8,22 @@
  *
  * ASSUMPTION: "static/cached content page" is modeled as an SFCC Content
  * asset (dw.content.ContentMgr) rather than a Page Designer page, so the
- * generated body can hold schema.org JSON-LD directly. Sitemap refresh is
+ * generated body can hold markup directly - the platform's standard
+ * Content-Show controller prints custom.body unencoded. Sitemap refresh is
  * intentionally NOT reimplemented here - this step only keeps
  * Content.onlineFlag accurate (online for combos with in-stock products,
  * offline otherwise) and assumes it runs immediately before the platform's
  * existing "Generate Sitemap" job step in the same job chain, so sitemap
  * output picks up the online/offline state on the same run.
+ *
+ * custom.body holds two things back to back: the schema.org JSON-LD
+ * (unchanged) and a real product grid so the Comparison Tool can be used
+ * directly from the thematic page - each tile's checkbox reuses the exact
+ * markup/classes/data-attributes of components/compareControl.isml
+ * (data-compare-select/data-vg-id/data-name/data-image) and the page's
+ * "View Comparison" trigger reuses compare.js's existing data-compare-view
+ * contract, so no new client JS, controller, or service is introduced; the
+ * existing Compare-Show route and compare.js handlers work unmodified.
  */
 
 var CustomObjectMgr = require('dw/object/CustomObjectMgr');
@@ -30,6 +40,7 @@ var featureFlags = require('../helpers/featureFlags');
 var log = Logger.getLogger('bloomreach', 'GenerateThematicPages');
 var FEATURE = 'ThematicPages';
 var CONTENT_FOLDER_ID = 'work-thematic-pages';
+var STOREFRONT_BASE_URL = '/on/demandware.store/Sites-Ariat-Site/default/';
 
 function getCombinations() {
     var iter = CustomObjectMgr.getAllCustomObjects('ThematicPageCombination');
@@ -83,16 +94,68 @@ function buildSchemaOrgMarkup(combo, docs) {
         return {
             '@type': 'ListItem',
             position: index + 1,
-            url: '/on/demandware.store/Sites-Ariat-Site/default/Product-Show?pid=' + ids.vgId,
+            url: STOREFRONT_BASE_URL + 'Product-Show?pid=' + ids.vgId,
             name: doc.title
         };
     });
-    return JSON.stringify({
+    var json = JSON.stringify({
         '@context': 'https://schema.org',
         '@type': 'ItemList',
         name: [combo.jobType, combo.safetySpec, combo.toeShape].filter(Boolean).join(' '),
         itemListElement: itemListElement
     });
+
+    // This JSON gets embedded in a literal <script> tag below - escape "<" so
+    // a feed value containing "</script>" (e.g. in a title) cannot close the
+    // tag early and inject markup. Valid, unaffected JSON otherwise.
+    return json.replace(/</g, '\\u003c');
+}
+
+function escapeHtml(value) {
+    return String(value === undefined || value === null ? '' : value)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
+
+/**
+ * Renders the thematic page's product grid with the SAME compare-checkbox
+ * markup/classes as components/compareControl.isml (data-compare-select,
+ * data-vg-id, data-name, data-image) so the site's existing compare.js
+ * delegated handlers - and the existing Compare-Show route - work here
+ * unmodified. This is a job step producing a static Content asset body, not
+ * an ISML template, so markup is hand-built and hand-escaped rather than
+ * relying on ISML auto-encoding.
+ */
+function buildProductGridMarkup(docs) {
+    var tiles = docs.map(function (doc) {
+        var ids = identity.fromBloomreachHit(doc);
+        var vgId = escapeHtml(ids.vgId);
+        var title = escapeHtml(doc.title);
+        var image = escapeHtml(doc.thumb_image);
+        var pdpUrl = STOREFRONT_BASE_URL + 'Product-Show?pid=' + encodeURIComponent(ids.vgId);
+
+        return '<div class="product-tile thematic-page__tile" data-vg-id="' + vgId + '">'
+            + '<a href="' + pdpUrl + '">'
+            + '<img src="' + image + '" alt="' + title + '" />'
+            + '<div class="product-tile__name">' + title + '</div>'
+            + '<div class="product-tile__price">' + escapeHtml(doc.price) + '</div>'
+            + '</a>'
+            + '<label class="compare-control">'
+            + '<input type="checkbox" class="compare-control__checkbox" data-compare-select '
+            + 'data-vg-id="' + vgId + '" data-name="' + title + '" data-image="' + image + '" />'
+            + '<span class="compare-control__label">Compare</span>'
+            + '</label>'
+            + '</div>';
+    }).join('');
+
+    return '<div class="thematic-page__grid product-grid">' + tiles + '</div>'
+        + '<button type="button" class="btn btn-secondary thematic-page__compare-trigger" '
+        + 'data-compare-view data-url="' + STOREFRONT_BASE_URL + 'Compare-Show">'
+        + 'View Comparison'
+        + '</button>';
 }
 
 function upsertContent(combo, docs, dryRun) {
@@ -121,7 +184,9 @@ function upsertContent(combo, docs, dryRun) {
         content.setOnline(hasProducts);
 
         if (hasProducts) {
-            content.custom.body = buildSchemaOrgMarkup(combo, docs);
+            var schemaOrgJson = buildSchemaOrgMarkup(combo, docs);
+            var schemaOrgMarkup = '<script type="application/ld+json">' + schemaOrgJson + '</script>';
+            content.custom.body = schemaOrgMarkup + buildProductGridMarkup(docs);
             content.custom.productCount = docs.length;
         }
     });
