@@ -158,8 +158,14 @@ All Bloomreach credentials are stored as **SFCC Custom Site Preferences** — th
 
 - **Protocol:** HTTPS GET requests only.
 - **Endpoint:** Bloomreach Discovery Product Search API.
-- **Request shape:** All calls include `account_id`, `auth_key`, `domain_key`, and a `request_id` (timestamp-based, auto-generated per call).
+- **Request shape:** All calls include `account_id`, `auth_key`, `domain_key`, and a `request_id` (timestamp-based, auto-generated per call). Boot Finder Results and Compare-Show additionally include `user_id` (the logged-in shopper's SFCC customer id) when authenticated - see §4.4.
 - **Response shape:** Standard Bloomreach JSON — `{ response: { docs: [...], numFound: N } }`.
+
+### 4.4 Logged-In Shopper Personalisation (`user_id`)
+
+`helpers/bloomreachCustomerIdentity.resolveUserId(currentCustomer)` returns `dw.customer.Customer.ID` when the shopper is authenticated, else `null`. Only Boot Finder Results and Compare-Show resolve and forward this as `user_id`; **Work-JobLanding and free-text Search/Autosuggest are explicitly excluded** per the integration spec, since both are shared, cacheable, non-personalized routes (see §3.4's cache middleware table) that must not vary per shopper. The exclusion is structural, not a runtime check: those two call sites simply never call `resolveUserId` or pass a `userId`/third argument, so nothing is sent - `bloomreachService` drops `undefined` params before building the request, so an anonymous shopper's request is unchanged either way.
+
+**ASSUMPTION:** "logged in user id" means the standard SFCC `Customer.ID`, not a hashed or pseudonymous identifier. Confirm with the Bloomreach account team which identifier they expect before shipping.
 
 ### 4.3 Query Types Used
 

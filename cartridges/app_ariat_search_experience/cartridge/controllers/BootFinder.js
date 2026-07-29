@@ -11,6 +11,7 @@ var featureFlags = require('*/cartridge/scripts/helpers/featureFlags');
 var bloomreachLogger = require('*/cartridge/scripts/helpers/bloomreachLogger');
 var thematicPageLookup = require('*/cartridge/scripts/helpers/thematicPageLookup');
 var dwSearchFallbackHelper = require('*/cartridge/scripts/helpers/dwSearchFallbackHelper');
+var bloomreachCustomerIdentity = require('*/cartridge/scripts/helpers/bloomreachCustomerIdentity');
 
 var FEATURE = 'BootFinder';
 
@@ -80,7 +81,11 @@ server.get('Results', interactiveCache.applyNoCache, function (req, res, next) {
             answers: answers,
             reviewCountBoostEnabled: featureFlags.isEnabled('REVIEW_COUNT_BOOST'),
             salesRankTiebreakEnabled: featureFlags.isEnabled('SALES_RANK_TIEBREAK'),
-            rows: 24
+            rows: 24,
+            // Boot Finder is one of the two features that sends the logged-in
+            // shopper id to Bloomreach (Work-JobLanding and Search are
+            // explicitly excluded - see helpers/bloomreachCustomerIdentity).
+            userId: bloomreachCustomerIdentity.resolveUserId(req.currentCustomer && req.currentCustomer.raw)
         };
         var bloomreachResponse = attributeQueryHelper.queryByAttributes(queryParams, FEATURE);
 

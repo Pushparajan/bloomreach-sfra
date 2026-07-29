@@ -85,6 +85,12 @@ function buildFilterQueries(answers, options) {
  * @param {boolean} [params.salesRankTiebreakEnabled]
  * @param {number} [params.start]
  * @param {number} [params.rows]
+ * @param {string} [params.userId] - logged-in shopper id (see
+ *   helpers/bloomreachCustomerIdentity). ONLY Boot Finder passes this -
+ *   Work-JobLanding must not, per the integration spec's exclusion of
+ *   Landing Pages from personalization; omitting it (leaving undefined)
+ *   is how a caller opts out, since bloomreachService drops undefined
+ *   params before sending the request.
  * @param {string} feature - logging context, e.g. 'BootFinder', 'WorkJobLanding'
  * @returns {Object|null} parsed Bloomreach response, or null on failure
  */
@@ -99,7 +105,8 @@ function queryByAttributes(params, feature) {
         fq: fq.join(' AND '),
         sort: sortField + ' desc',
         start: params.start || 0,
-        rows: params.rows || 24
+        rows: params.rows || 24,
+        user_id: params.userId
     };
 
     try {

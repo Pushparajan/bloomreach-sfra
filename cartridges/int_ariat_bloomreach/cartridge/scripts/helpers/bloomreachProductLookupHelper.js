@@ -25,9 +25,13 @@ var MIN_COMPARE_ITEMS = 2;
 /**
  * @param {string[]} vgIds - Variation Group ids (2-4)
  * @param {string} feature - logging context
+ * @param {string} [userId] - logged-in shopper id (see
+ *   helpers/bloomreachCustomerIdentity), sent for the Comparison Tool per
+ *   the integration spec. Omit to opt out (undefined params are dropped by
+ *   bloomreachService before the request is sent).
  * @returns {Object|null} parsed Bloomreach response keyed by pid, or null on failure
  */
-function lookupByIds(vgIds, feature) {
+function lookupByIds(vgIds, feature, userId) {
     var ids = (vgIds || []).filter(identity.isWellFormedId);
     if (ids.length < MIN_COMPARE_ITEMS || ids.length > MAX_COMPARE_ITEMS) {
         throw new Error('Comparison lookup requires between ' + MIN_COMPARE_ITEMS + ' and '
@@ -37,7 +41,8 @@ function lookupByIds(vgIds, feature) {
     var idClause = ids.map(function (id) { return '"' + id.replace(/"/g, '\\"') + '"'; }).join(' OR ');
     var requestParams = {
         fq: constants.IDENTITY.PID_FIELD + ':(' + idClause + ')',
-        rows: ids.length
+        rows: ids.length,
+        user_id: userId
     };
 
     try {

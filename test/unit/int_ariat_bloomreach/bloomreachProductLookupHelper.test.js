@@ -45,6 +45,24 @@ describe('int_ariat_bloomreach/helpers/bloomreachProductLookupHelper', function 
         }, /between 2 and 4/);
     });
 
+    it('includes user_id in the request when the caller passes one (e.g. a logged-in shopper comparing products)', function () {
+        var serviceCall = sinon.stub().returns({ response: { docs: [] } });
+        var mod = load(serviceCall);
+
+        mod.lookupByIds(['VG-1', 'VG-2'], 'Compare', 'cust-123');
+
+        assert.equal(serviceCall.firstCall.args[0].user_id, 'cust-123');
+    });
+
+    it('omits user_id entirely when the caller does not pass one (e.g. an anonymous shopper)', function () {
+        var serviceCall = sinon.stub().returns({ response: { docs: [] } });
+        var mod = load(serviceCall);
+
+        mod.lookupByIds(['VG-1', 'VG-2'], 'Compare');
+
+        assert.isUndefined(serviceCall.firstCall.args[0].user_id);
+    });
+
     it('service failure: logs and returns null rather than throwing out of the controller', function () {
         var error = new Error('503');
         var serviceCall = sinon.stub().throws(error);

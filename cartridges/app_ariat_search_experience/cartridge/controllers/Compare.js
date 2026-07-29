@@ -7,6 +7,7 @@ var compareModel = require('*/cartridge/scripts/compare/compareModel');
 var bloomreachLogger = require('*/cartridge/scripts/helpers/bloomreachLogger');
 var thematicPageLookup = require('*/cartridge/scripts/helpers/thematicPageLookup');
 var dwSearchFallbackHelper = require('*/cartridge/scripts/helpers/dwSearchFallbackHelper');
+var bloomreachCustomerIdentity = require('*/cartridge/scripts/helpers/bloomreachCustomerIdentity');
 
 var FEATURE = 'Compare';
 
@@ -48,9 +49,13 @@ server.get('Show', interactiveCache.applyNoCache, function (req, res, next) {
     }
 
     if (!docs) {
+        // Comparison Tool is one of the two features that sends the
+        // logged-in shopper id to Bloomreach (Work-JobLanding and Search
+        // are explicitly excluded - see helpers/bloomreachCustomerIdentity).
+        var userId = bloomreachCustomerIdentity.resolveUserId(req.currentCustomer && req.currentCustomer.raw);
         var bloomreachResponse;
         try {
-            bloomreachResponse = productLookupHelper.lookupByIds(vgIds, FEATURE);
+            bloomreachResponse = productLookupHelper.lookupByIds(vgIds, FEATURE, userId);
         } catch (e) {
             bloomreachLogger.logServiceFailure(FEATURE, e, { vgIds: vgIds });
             bloomreachResponse = null;
