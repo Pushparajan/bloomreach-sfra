@@ -107,8 +107,14 @@ function escapeHtml(value) {
  * unmodified. This is a job step producing a static Content asset body, not
  * an ISML template, so markup is hand-built and hand-escaped rather than
  * relying on ISML auto-encoding.
+ *
+ * The "View Comparison" trigger carries data-theme-key=combo.key so
+ * compare.js can forward it to Compare-Show as a `theme` param - letting
+ * that route reuse THIS page's own stored productData instead of a live
+ * Bloomreach call, falling back to the live call only if that data isn't
+ * available (see helpers/thematicPageLookup.findDocsByCombinationKey).
  */
-function buildProductGridMarkup(docs) {
+function buildProductGridMarkup(combo, docs) {
     var tiles = docs.map(function (doc) {
         var ids = identity.fromBloomreachHit(doc);
         var vgId = escapeHtml(ids.vgId);
@@ -132,7 +138,8 @@ function buildProductGridMarkup(docs) {
 
     return '<div class="thematic-page__grid product-grid">' + tiles + '</div>'
         + '<button type="button" class="btn btn-secondary thematic-page__compare-trigger" '
-        + 'data-compare-view data-url="' + STOREFRONT_BASE_URL + 'Compare-Show">'
+        + 'data-compare-view data-url="' + STOREFRONT_BASE_URL + 'Compare-Show" '
+        + 'data-theme-key="' + escapeHtml(combo.key) + '">'
         + 'View Comparison'
         + '</button>';
 }
@@ -165,7 +172,7 @@ function upsertContent(combo, docs, dryRun) {
         if (hasProducts) {
             var schemaOrgJson = buildSchemaOrgMarkup(combo, docs);
             var schemaOrgMarkup = '<script type="application/ld+json">' + schemaOrgJson + '</script>';
-            content.custom.body = schemaOrgMarkup + buildProductGridMarkup(docs);
+            content.custom.body = schemaOrgMarkup + buildProductGridMarkup(combo, docs);
             content.custom.productCount = docs.length;
             // Raw hits, kept alongside the display markup so Boot Finder can
             // reuse this exact, already-hard-filtered product set (see
