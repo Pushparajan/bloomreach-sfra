@@ -7,6 +7,13 @@ directly in GitHub, GitLab, VS Code (Mermaid extension), or any Mermaid-aware vi
 
 ## 1. Bloomreach Service Layer (Base HTTP Call)
 
+> **Business context:** This is the shared "phone line" that every Bloomreach-powered feature
+> uses when it needs to fetch product data. Rather than each feature managing its own
+> connection to Bloomreach, they all go through one central module that handles API
+> credentials, request formatting, and error logging automatically. This means credential
+> changes or logging improvements only need to be made in one place, and sensitive API
+> keys are never written to logs.
+
 Every feature in this integration (Boot Finder, Comparison Tool, Work Job Landing,
 Thematic Pages, and free-text search/suggest) routes through this single service
 module rather than making raw HTTP calls.
@@ -49,6 +56,13 @@ sequenceDiagram
 
 ## 2. Free-Text Search & Autosuggest
 
+> **Business context:** This covers what happens when a shopper types keywords into the
+> site search bar. There are two sub-flows: **search** (returning a full results page for a
+> submitted query such as "waterproof boots") and **autosuggest** (returning instant
+> suggestions as the shopper types). Both call Bloomreach's Discovery API and are the
+> foundation on which all the more specialised attribute-filter features (Boot Finder,
+> Job Landing, Thematic Pages) are built.
+
 Standard keyword search and autocomplete calls used by the existing site search
 integration (these shapes are the baseline that all new filter-query (`fq`)-based features extend).
 
@@ -80,6 +94,13 @@ sequenceDiagram
 ---
 
 ## 3. Boot Finder – Initial Page Load (Show)
+
+> **Business context:** This is what happens the moment a shopper opens the Boot Finder
+> modal. The server checks which questions are currently switched on (via feature flags
+> controlled in SFCC Business Manager) and sends the complete question set to the browser
+> in a single response. From that point on, the questionnaire runs entirely in the
+> browser — there are no loading delays between questions — which keeps the guided
+> experience fast and seamless for the shopper.
 
 Renders the modal shell with the active question list embedded as JSON so the
 client-side state machine can drive all subsequent steps without extra round trips.
@@ -120,6 +141,13 @@ sequenceDiagram
 ---
 
 ## 4. Boot Finder – Client-Side Question State Machine
+
+> **Business context:** This tracks the shopper's complete journey through the Boot Finder
+> questionnaire — from dismissing the entry card, to answering each question (job type,
+> toe shape, shaft height, waterproofing, insulation, size/width), to skipping a question,
+> to tapping "Show results now" early. Every answer is stored locally in the browser, and
+> analytics events are fired to GTM at each step. Only one server call is made — when the
+> shopper is finally ready to see their personalised product recommendations.
 
 After the modal HTML is loaded, the browser drives the entire question flow locally
 using the embedded question list. No server round trip occurs until the shopper is
@@ -184,6 +212,14 @@ sequenceDiagram
 ---
 
 ## 5. Boot Finder – Results (Server-Side AJAX Endpoint)
+
+> **Business context:** Once the shopper has answered (or skipped) all Boot Finder
+> questions, this endpoint converts those answers into a personalised product grid.
+> The server queries Bloomreach using the shopper's choices as filters, then cross-checks
+> SFCC inventory to ensure only boots available in the shopper's chosen size and width are
+> shown. Each result card is decorated with plain-language "match chips" (e.g.
+> "Electrical Ready", "Composite Toe", "8″ Shaft") that tell the shopper exactly why that
+> boot was recommended for them.
 
 Handles the AJAX call made by the client state machine once the shopper has answered
 (or skipped) all active questions.
@@ -271,6 +307,14 @@ sequenceDiagram
 ---
 
 ## 6. Comparison Tool
+
+> **Business context:** Lets shoppers select up to four boots from any listing page (PLP,
+> Boot Finder results, Job Landing page) and view them in a side-by-side feature
+> comparison table. Selections persist in session storage as the shopper browses, so
+> they can add products from multiple pages before hitting "Compare". The table rows
+> (Safety Toe, Toe Shape, Shaft Height, Waterproof, Insulation, Ratings) are driven by
+> the same feature flags as Boot Finder, so the comparison table always stays in sync
+> with whichever product attributes are currently enabled on the site.
 
 Covers both the client-side selection management and the server-side table rendering.
 
@@ -371,6 +415,14 @@ sequenceDiagram
 
 ## 7. Work / Job Landing Page
 
+> **Business context:** Generates a trade-specific browse page — for example,
+> `/Work-JobLanding?jobType=electrical` shows "Boots for Electrical Work" — surfacing the
+> highest-rated products that match a particular job category. Unlike Boot Finder, the
+> shopper doesn't answer any questions; the job type is determined by the URL, which
+> makes these pages fully cacheable and SEO-indexable. Merchandisers enable or disable
+> individual job-type pages through a feature flag in Business Manager, and Page Designer
+> content zones let them add editorial copy above the product grid.
+
 Attribute-filtered browse page for a trade job type (e.g. `/Work-JobLanding?jobType=electrical`).
 Uses the same query-building helper as Boot Finder Question 1 (job-type selection) and supports standard SFRA page caching.
 
@@ -443,6 +495,15 @@ sequenceDiagram
 
 ## 8. Loomi Conversational Search (Feature-Flagged Stub)
 
+> **Business context:** Loomi is Bloomreach's AI-powered natural-language search
+> capability — it would allow shoppers to type requests like "waterproof boots for
+> electrical work under $150" and receive intelligent, context-aware results. Because
+> Loomi requires a separate commercial licence that has not yet been approved, this
+> section documents the planned integration shape rather than live code. Currently the
+> endpoint always responds with `{ "available": false }` so the rest of the site can
+> be built and tested independently. When the licence is in place, this stub is the
+> starting point for the real implementation.
+
 Loomi is license-gated and not yet approved for build. This controller is a documented
 stub only — the only live code path returns `{"available": false}`.
 
@@ -471,6 +532,15 @@ sequenceDiagram
 ---
 
 ## 9. Generate Thematic Pages (Batch Job)
+
+> **Business context:** An automated overnight job that creates and maintains SEO landing
+> pages for specific product attribute combinations — for example, "Electrical Composite
+> Toe Boots" or "Waterproof Wide-Width Work Boots". A merchandiser maintains a list of
+> desired page combinations in a SFCC Custom Object; the job queries Bloomreach for each
+> combination and either publishes the page (if matching in-stock products exist) or takes
+> it offline (if no products match), ensuring shoppers and search engines never land on
+> an empty page. A "dry run" mode lets teams preview what would be published before
+> making any live changes.
 
 SFCC Job step that reads a merchandiser-editable combination matrix, queries Bloomreach
 per row, and creates/updates/hides Content assets with schema.org JSON-LD markup.
@@ -568,6 +638,16 @@ sequenceDiagram
 
 ## Cross-Cutting Relationships
 
+> **Business context:** Three patterns that are used consistently by every feature in
+> this integration. **Feature flag resolution** shows how each capability (shaft-height
+> range, waterproof question, review-count boost, etc.) is switched on or off through a
+> simple checkbox in SFCC Business Manager — no code deployment required. **Structured
+> logging** shows how errors are captured in a privacy-safe way (product IDs and facet
+> values only — never customer data). **Identity enforcement** shows how the system
+> guarantees that only the correct type of product ID (Variation Group or individual
+> SKU) is ever sent to or received from Bloomreach, preventing a whole class of
+> catalogue data bugs.
+
 ```mermaid
 sequenceDiagram
     participant Any as Any Feature Controller
@@ -611,6 +691,16 @@ sequenceDiagram
 ---
 
 ## 11. Attribute & Constants Reference
+
+> **Business context:** A quick-reference guide for anyone who needs to understand which
+> product attributes are used across Boot Finder, Compare, and Thematic Pages, and how
+> each feature flag maps to a checkbox in SFCC Business Manager. The four sub-diagrams
+> cover: (a) the product ID fields used to identify items in Bloomreach; (b) all
+> searchable attribute names (safety toe, toe shape, shaft height, job type, waterproofing,
+> warmth rating, ratings, and sales rank); (c) every feature flag and the exact Site
+> Preference name a merchandiser would look for in Business Manager; and (d) how the
+> product sort order (best-rated first, with optional tiebreakers) is assembled from
+> those flags.
 
 All logical attribute names, Bloomreach index field names, feature flags, and their preference IDs in one place.
 These constants live in `bloomreachConstants.js` and are the single source of truth consumed by every helper and controller above.
