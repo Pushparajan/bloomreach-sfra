@@ -11,7 +11,7 @@ var featureFlags = require('*/cartridge/scripts/helpers/featureFlags');
 var bloomreachLogger = require('*/cartridge/scripts/helpers/bloomreachLogger');
 var thematicPageLookup = require('*/cartridge/scripts/helpers/thematicPageLookup');
 var dwSearchFallbackHelper = require('*/cartridge/scripts/helpers/dwSearchFallbackHelper');
-var bloomreachCustomerIdentity = require('*/cartridge/scripts/helpers/bloomreachCustomerIdentity');
+var bloomreachPersonalizationIdentity = require('*/cartridge/scripts/helpers/bloomreachPersonalizationIdentity');
 
 var FEATURE = 'BootFinder';
 
@@ -82,10 +82,14 @@ server.get('Results', interactiveCache.applyNoCache, function (req, res, next) {
             reviewCountBoostEnabled: featureFlags.isEnabled('REVIEW_COUNT_BOOST'),
             salesRankTiebreakEnabled: featureFlags.isEnabled('SALES_RANK_TIEBREAK'),
             rows: 24,
-            // Boot Finder is one of the two features that sends the logged-in
-            // shopper id to Bloomreach (Work-JobLanding and Search are
-            // explicitly excluded - see helpers/bloomreachCustomerIdentity).
-            userId: bloomreachCustomerIdentity.resolveUserId(req.currentCustomer && req.currentCustomer.raw)
+            // 1:1 personalization — gated on personalization.oneToOne.enabled,
+            // see R-38. resolveShopperIdentity returns a null userId whenever
+            // the flag is off, the shopper is a guest, or identity is
+            // ambiguous - Work-JobLanding's shell and Search are excluded by
+            // never calling this helper at all (see
+            // helpers/bloomreachPersonalizationIdentity).
+            userId: bloomreachPersonalizationIdentity
+                .resolveShopperIdentity(req.currentCustomer && req.currentCustomer.raw).userId
         };
         var bloomreachResponse = attributeQueryHelper.queryByAttributes(queryParams, FEATURE);
 

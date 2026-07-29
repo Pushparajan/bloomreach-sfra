@@ -113,15 +113,16 @@ app_ariat_search_experience:int_ariat_bloomreach:[base_sfra_cartridges]
 | `BootFinder-Show` | `GET /BootFinder-Show` | No-cache (personalized) | Renders the Boot Finder modal shell with question data embedded |
 | `BootFinder-Results` | `GET /BootFinder-Results?answers=<JSON>` | No-cache (personalized) | AJAX endpoint that queries Bloomreach with the shopper's answers |
 | `Compare-Show` | `GET /Compare-Show?pids=id1,id2,...` | No-cache (personalized) | Renders side-by-side comparison table for 2–4 product IDs |
-| `Work-JobLanding` | `GET /Work-JobLanding?jobType=<slug>` | Standard page cache | Renders a trade/job-type landing page |
+| `Work-JobLanding` | `GET /Work-JobLanding?jobType=<slug>` | Standard page cache | Renders the shell: trade/job-type landing page (hero, copy, product grid, personalized-strip placeholder) |
+| `Work-PersonalizedStrip` | `GET /Work-PersonalizedStrip?jobType=<slug>` | No-cache (R-38) | Fetched client-side by the shell; content-zone fallback or 1:1-personalized strip (see §5.3, §4.7) |
 | `Loomi-Query` | `GET /Loomi-Query?q=<text>` | — | Returns `{available: false}` while license gate is closed |
 
 ### 3.4 Middleware
 
 Two cache middlewares control how pages are served:
 
-- **`interactiveCache.applyNoCache`** — applied to Boot Finder and Compare. Forces a fresh server call every time. Ensures personalized state (answers, selections) is never served from a shared cache.
-- **`cache.applyDefaultCache`** — applied to Work Job Landing. Allows SFCC's standard page cache to absorb repeat traffic since the content is not shopper-specific.
+- **`interactiveCache.applyNoCache`** — applied to Boot Finder, Compare, and Work-PersonalizedStrip (R-38). Forces a fresh server call every time. Ensures personalized state (answers, selections, 1:1-personalized content) is never served from a shared cache.
+- **`cache.applyDefaultCache`** — applied to Work-JobLanding's shell. Allows SFCC's standard page cache to absorb repeat traffic since the shell's own content is not shopper-specific.
 
 ### 3.5 Error Handling Pattern
 
@@ -158,14 +159,8 @@ All Bloomreach credentials are stored as **SFCC Custom Site Preferences** — th
 
 - **Protocol:** HTTPS GET requests only.
 - **Endpoint:** Bloomreach Discovery Product Search API.
-- **Request shape:** All calls include `account_id`, `auth_key`, `domain_key`, and a `request_id` (timestamp-based, auto-generated per call). Boot Finder Results and Compare-Show additionally include `user_id` (the logged-in shopper's SFCC customer id) when authenticated - see §4.4.
+- **Request shape:** All calls include `account_id`, `auth_key`, `domain_key`, and a `request_id` (timestamp-based, auto-generated per call). Boot Finder Results, Compare-Show, and Work-JobLanding's `PersonalizedStrip` fragment additionally include `user_id` when `personalization.oneToOne.enabled` is on and the shopper is authenticated - see §4.7.
 - **Response shape:** Standard Bloomreach JSON — `{ response: { docs: [...], numFound: N } }`.
-
-### 4.4 Logged-In Shopper Personalisation (`user_id`)
-
-`helpers/bloomreachCustomerIdentity.resolveUserId(currentCustomer)` returns `dw.customer.Customer.ID` when the shopper is authenticated, else `null`. Only Boot Finder Results and Compare-Show resolve and forward this as `user_id`; **Work-JobLanding and free-text Search/Autosuggest are explicitly excluded** per the integration spec, since both are shared, cacheable, non-personalized routes (see §3.4's cache middleware table) that must not vary per shopper. The exclusion is structural, not a runtime check: those two call sites simply never call `resolveUserId` or pass a `userId`/third argument, so nothing is sent - `bloomreachService` drops `undefined` params before building the request, so an anonymous shopper's request is unchanged either way.
-
-**ASSUMPTION:** "logged in user id" means the standard SFCC `Customer.ID`, not a hashed or pseudonymous identifier. Confirm with the Bloomreach account team which identifier they expect before shipping.
 
 ### 4.3 Query Types Used
 
@@ -211,6 +206,26 @@ This ensures highly-rated, well-reviewed boots surface first, with sales velocit
 ### 4.6 Inventory Burying
 
 When enabled via the `lowStockBuryThreshold` site preference, the integration automatically appends a filter fragment that demotes (buries) low-stock products in Bloomreach results. Products below the threshold are pushed to the bottom of results without being removed entirely.
+
+### 4.7 1:1 (Individual-Level) Personalisation — `user_id` (R-38)
+
+This is distinct from everything else in this section: it is gated by a dedicated master flag (`PERSONALIZATION_ONE_TO_ONE`, §7.4), not just an index-field dependency, and that flag has business/legal prerequisites before it may ever be turned on - see §7.4 before reading further.
+
+`helpers/bloomreachPersonalizationIdentity.resolveShopperIdentity(currentCustomer)` returns `{ userId, isLoggedIn }`. `userId` is `dw.customer.Customer.ID` **only when both** `personalization.oneToOne.enabled` is on **and** the shopper is authenticated; it is `null` in every other case (flag off, guest, or ambiguous identity) - the flag check lives inside this single function precisely so no call site can leak a `user_id` while the flag is off, no matter how many call sites are added in the future.
+
+**Scope - three call sites, one exclusion pattern:**
+
+| Route | Sends `user_id`? | How |
+|---|---|---|
+| Boot Finder Results | Yes, when eligible | `resolveShopperIdentity(...).userId` passed into `bloomreachAttributeQueryHelper.queryByAttributes` |
+| Compare-Show | Yes, when eligible | Same, passed into `bloomreachProductLookupHelper.lookupByIds` |
+| Work-JobLanding **shell** | No, never | Never calls `resolveShopperIdentity` at all |
+| Work-JobLanding's `PersonalizedStrip` **fragment** (§5.3) | Yes, when eligible | Same pattern as Boot Finder/Compare, but only within this separate, uncached fragment - not the cached shell |
+| Free-Text Search/Autosuggest | No, never | Never calls `resolveShopperIdentity` at all; explicitly out of scope for R-38 (see §5.3's note on why) |
+
+The exclusions are structural, not runtime checks: those call sites simply never call `resolveShopperIdentity` or pass a `userId`. Since `bloomreachService` already drops `undefined` params before building the request, an anonymous shopper's (or flag-off) request is byte-for-byte identical to before this feature existed.
+
+**ASSUMPTION (ships as a documented placeholder, not a confirmed final value):** no pixel/analytics identity mechanism exists anywhere in this codebase to mirror (`client/default/js/shared/gtmEvents.js` itself documents that no real GTM dataLayer implementation was found). "Logged in user id" therefore resolves to the raw SFCC `Customer.ID` today. Two follow-ups before this ships for real: (1) confirm with the Bloomreach account team what identity value they actually expect (raw id vs. a hash vs. something else), and (2) once a real pixel/tracking identity mechanism is built, update it and `resolveShopperIdentity` together so query-time personalization and behavioral-history identity never diverge - see that module's header comment for why divergence defeats the point of sending an identifier at all.
 
 ---
 
@@ -317,13 +332,23 @@ When enabled via the `lowStockBuryThreshold` site preference, the integration au
 3. Server queries Bloomreach for products matching that job type (soft-boosted, not hard-filtered).
 4. If that query fails (Bloomreach unreachable), server falls back to SFCC's native search via
    `helpers/dwSearchFallbackHelper` (see §3.6) before treating it as a service failure.
-5. Server also attempts to load a Page Designer content page named "work-joblanding-{slug}".
-6. Template renders: editorial content zone (if found) + H1 heading + product grid.
-7. If both Bloomreach and the dw search fallback fail → shows an error message but page still loads.
+5. Shell template renders: H1 heading + product grid + a placeholder for the personalized
+   content-zone strip (see below) + Boot Finder entry card.
+6. Browser fetches Work-PersonalizedStrip client-side and injects the response into that
+   placeholder once loaded - the shell itself never waits on this.
+7. If both Bloomreach and the dw search fallback fail on the shell's own product query →
+   shows an error message but page still loads.
 8. If no products found → shows a "no products" message.
 ```
 
-**Caching:** This page uses standard SFCC page cache, so repeat visitors and crawlers benefit from cached HTML. Unlike Boot Finder, there is no personalized state.
+**Caching:** The shell (hero/copy/tiles, H1, and the generic job-type product grid) uses standard SFCC page cache, so repeat visitors and crawlers benefit from cached HTML - none of this varies per shopper. Unlike Boot Finder, there is no personalized state **in the shell**.
+
+**R-38 - Shell/Fragment split for 1:1 personalization:** the one part of this page that CAN vary per individual shopper - the content-zone slot - has been pulled out of the cached shell into a separate, uncached fragment endpoint, `Work-PersonalizedStrip` (`controllers/Work.js`), fetched client-side by `client/default/js/work/jobLandingPersonalizedStrip.js` after the shell loads. This keeps the shell's own cacheability completely untouched while still allowing the one genuinely personal piece of the page to be personalized:
+
+- **Flag off, or guest, or the Bloomreach call fails/returns nothing:** the fragment renders the SAME existing Page Designer content zone (`work-joblanding-{slug}`) this page has always used - reused unchanged, not rebuilt, per the integration spec. This is the fallback, not an error state.
+- **Flag on and shopper logged in:** the fragment calls Bloomreach with `user_id` (see §4.7) for a small (8-item) personalized product strip, tagged distinctly in logs as `WorkJobLandingPersonalized` so this code path's health can be monitored separately from the shell's own `WorkJobLanding`-tagged query during rollout.
+- **Client-side fetch failure** (network error, non-2xx - rare, since the far more common flag-off/guest/failure cases above are all still HTML-success responses handled entirely server-side): the shell's skeleton placeholder is simply removed. The shell's hero, copy, product grid, and Boot Finder entry card are entirely unaffected either way.
+- No shared/CDN cache TTL is applied to this fragment's response, by design - a per-user micro-cache would be a reasonable rapid-reload optimization but is not implemented (see "Assumptions Made" in the R-38 implementation).
 
 **Boot Finder entry card** is included at the bottom of the Work Landing page, providing a natural next-step for shoppers.
 
@@ -458,12 +483,24 @@ All feature flags are SFCC Custom Site Preferences, managed in Business Manager.
 | `REVIEW_COUNT_BOOST` | `finderReviewCountBoostEnabled` | `false` | Adds `bvReviewCount` as secondary sort signal |
 | `SALES_RANK_TIEBREAK` | `finderSalesRankTiebreakEnabled` | `false` | Adds `sales_rank_bucket` as tertiary sort tiebreak |
 | `LOOMI_ENABLED` | `loomiEnabled` | `false` | Loomi conversational search (stub — do not enable) |
+| `PERSONALIZATION_ONE_TO_ONE` | `personalizationOneToOneEnabled` | `false` | **R-38 — see §7.4.** Master switch for sending `user_id` to Bloomreach for 1:1 personalization (Boot Finder, Compare, Work-JobLanding's `PersonalizedStrip` fragment only) |
 
 ### 7.2 Flag Behavior Guarantees
 
 - **A question whose flag is off is invisible to the shopper** — it is removed from the question list before the modal renders.
 - **A stale client that answered a disabled question** (flag turned off mid-session) will have that answer silently dropped server-side before the Bloomreach query runs.
 - **Flags can be toggled in Business Manager with no code deployment.** Changes take effect on the next request.
+
+### 7.4 `PERSONALIZATION_ONE_TO_ONE` — Business/Legal Gates Before Enabling
+
+Unlike every other flag in this table, `personalizationOneToOneEnabled` is **not** an engineering readiness switch — flipping it on sends an identifier to a third party (Bloomreach) for individual-level shopper profiling, which is a business and legal decision, not a code-deploy decision. **Do not enable this flag in any environment, including Staging, without both of the following confirmed first:**
+
+1. A confirmed Bloomreach license tier that includes individual-level (not just segment-level) personalization.
+2. A consent classification from the privacy/legal contact for *this specific* data flow. Sending an identifier to Bloomreach for individual profiling is a different consent question than any existing analytics/pixel classification on the site — do not assume an existing consent basis covers this without an explicit confirmation.
+
+If asked to enable this flag as part of a code change or deployment checklist, that request should be declined and redirected to whoever owns the two confirmations above — they are prerequisites to this flag's existence, not steps this integration's engineering work can satisfy.
+
+See `helpers/bloomreachPersonalizationIdentity.js` for the identity resolution this flag gates, and §4.4 for what it changes when on.
 
 ### 7.3 Recommended Activation Sequence
 

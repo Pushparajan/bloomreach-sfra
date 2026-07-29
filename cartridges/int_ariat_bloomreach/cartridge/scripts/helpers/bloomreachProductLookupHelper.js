@@ -25,9 +25,10 @@ var MIN_COMPARE_ITEMS = 2;
 /**
  * @param {string[]} vgIds - Variation Group ids (2-4)
  * @param {string} feature - logging context
- * @param {string} [userId] - logged-in shopper id (see
- *   helpers/bloomreachCustomerIdentity), sent for the Comparison Tool per
- *   the integration spec. Omit to opt out (undefined params are dropped by
+ * @param {string} [userId] - R-38: 1:1-personalization shopper id (see
+ *   helpers/bloomreachPersonalizationIdentity, gated on
+ *   personalization.oneToOne.enabled), sent for the Comparison Tool per the
+ *   integration spec. Omit to opt out (undefined params are dropped by
  *   bloomreachService before the request is sent).
  * @returns {Object|null} parsed Bloomreach response keyed by pid, or null on failure
  */
