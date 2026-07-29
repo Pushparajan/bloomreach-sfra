@@ -26,7 +26,6 @@
  * existing Compare-Show route and compare.js handlers work unmodified.
  */
 
-var CustomObjectMgr = require('dw/object/CustomObjectMgr');
 var ContentMgr = require('dw/content/ContentMgr');
 var Transaction = require('dw/system/Transaction');
 var Status = require('dw/system/Status');
@@ -36,32 +35,12 @@ var attributeQueryHelper = require('../helpers/bloomreachAttributeQueryHelper');
 var identity = require('../helpers/bloomreachIdentity');
 var constants = require('../helpers/bloomreachConstants');
 var featureFlags = require('../helpers/featureFlags');
+var thematicPageCombinations = require('../helpers/thematicPageCombinations');
 
 var log = Logger.getLogger('bloomreach', 'GenerateThematicPages');
 var FEATURE = 'ThematicPages';
 var CONTENT_FOLDER_ID = 'work-thematic-pages';
 var STOREFRONT_BASE_URL = '/on/demandware.store/Sites-Ariat-Site/default/';
-
-function getCombinations() {
-    var iter = CustomObjectMgr.getAllCustomObjects('ThematicPageCombination');
-    var combos = [];
-    try {
-        while (iter.hasNext()) {
-            var co = iter.next();
-            if (co.custom.enabled) {
-                combos.push({
-                    key: co.custom.combinationKey,
-                    jobType: co.custom.jobType,
-                    safetySpec: co.custom.safetySpec,
-                    toeShape: co.custom.toeShape
-                });
-            }
-        }
-    } finally {
-        iter.close();
-    }
-    return combos;
-}
 
 /**
  * R-21 gate: safety_specs[] combinations are skipped entirely while the
@@ -188,6 +167,12 @@ function upsertContent(combo, docs, dryRun) {
             var schemaOrgMarkup = '<script type="application/ld+json">' + schemaOrgJson + '</script>';
             content.custom.body = schemaOrgMarkup + buildProductGridMarkup(docs);
             content.custom.productCount = docs.length;
+            // Raw hits, kept alongside the display markup so Boot Finder can
+            // reuse this exact, already-hard-filtered product set (see
+            // helpers/thematicPageLookup) instead of issuing a second live
+            // Bloomreach query for the same job_type/toe_shape/safety_specs
+            // combination.
+            content.custom.productData = JSON.stringify(docs);
         }
     });
 }
@@ -198,7 +183,7 @@ function upsertContent(combo, docs, dryRun) {
  */
 function execute(parameters) {
     var dryRun = parameters.DryRun === true || parameters.DryRun === 'true';
-    var combinations = getCombinations();
+    var combinations = thematicPageCombinations.getEnabledCombinations();
     var processed = 0;
     var errors = 0;
 
