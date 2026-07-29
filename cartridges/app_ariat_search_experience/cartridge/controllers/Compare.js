@@ -6,6 +6,7 @@ var productLookupHelper = require('*/cartridge/scripts/helpers/bloomreachProduct
 var compareModel = require('*/cartridge/scripts/compare/compareModel');
 var bloomreachLogger = require('*/cartridge/scripts/helpers/bloomreachLogger');
 var thematicPageLookup = require('*/cartridge/scripts/helpers/thematicPageLookup');
+var dwSearchFallbackHelper = require('*/cartridge/scripts/helpers/dwSearchFallbackHelper');
 
 var FEATURE = 'Compare';
 
@@ -52,10 +53,18 @@ server.get('Show', interactiveCache.applyNoCache, function (req, res, next) {
             bloomreachResponse = productLookupHelper.lookupByIds(vgIds, FEATURE);
         } catch (e) {
             bloomreachLogger.logServiceFailure(FEATURE, e, { vgIds: vgIds });
-            res.setStatusCode(502);
-            res.render('compare/tableError', { message: 'We could not load comparison data right now.' });
-            next();
-            return;
+            bloomreachResponse = null;
+        }
+
+        // Bloomreach unreachable - fall back to SFCC's native product
+        // lookup rather than a 502, since a live shopper is waiting. See
+        // helpers/dwSearchFallbackHelper.
+        if (!bloomreachResponse) {
+            try {
+                bloomreachResponse = dwSearchFallbackHelper.lookupByIds(vgIds);
+            } catch (e) {
+                bloomreachLogger.logWarn(FEATURE, 'dw search fallback failed', { error: e.message });
+            }
         }
 
         if (!bloomreachResponse) {
