@@ -532,6 +532,7 @@ Create a custom preference group (e.g. `Bloomreach`) and add the following attri
 | `finderReviewCountBoostEnabled` | Boolean | Yes | Feature flag |
 | `finderSalesRankTiebreakEnabled` | Boolean | Yes | Feature flag |
 | `loomiEnabled` | Boolean | Yes | Must remain `false` |
+| `personalizationOneToOneEnabled` | Boolean | Yes | **Must remain `false`** until both R-38 business/legal gates are confirmed — see §7.4 |
 | `lowStockBuryThreshold` | Number | No | Threshold for inventory burying (e.g. `5`) |
 
 ### 8.2 SFCC Service Registration
