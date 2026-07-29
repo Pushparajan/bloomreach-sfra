@@ -551,14 +551,7 @@ sequenceDiagram
 
 ## 9. Generate Thematic Pages (Batch Job)
 
-> **Business context:** An automated overnight job that creates and maintains SEO landing
-> pages for specific product attribute combinations — for example, "Electrical Composite
-> Toe Boots" or "Waterproof Wide-Width Work Boots". A merchandiser maintains a list of
-> desired page combinations in a SFCC Custom Object; the job queries Bloomreach for each
-> combination and either publishes the page (if matching in-stock products exist) or takes
-> it offline (if no products match), ensuring shoppers and search engines never land on
-> an empty page. A "dry run" mode lets teams preview what would be published before
-> making any live changes.
+**Business context:** An automated overnight job that creates and maintains SEO landing pages for specific product attribute combinations — for example, "Electrical Composite Toe Boots" or "Waterproof Wide-Width Work Boots". A merchandiser maintains a list of desired page combinations in a SFCC Custom Object; the job queries Bloomreach for each combination and either publishes the page (if matching in-stock products exist) or takes it offline (if no products match), ensuring shoppers and search engines never land on an empty page. A "dry run" mode lets teams preview what would be published before making any live changes.
 
 SFCC Job step that reads a merchandiser-editable combination matrix, queries Bloomreach
 per row, and creates/updates/hides Content assets with schema.org JSON-LD markup.
