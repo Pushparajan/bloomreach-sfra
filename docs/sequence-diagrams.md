@@ -27,9 +27,9 @@ sequenceDiagram
     Note over SFCC_SvcReg: createRequest callback fires
     SFCC_SvcReg->>SitePrefs: getCustomPreferences()<br/>(bloomreachAccountId / AuthKey / DomainKey)
     SitePrefs-->>SFCC_SvcReg: base credential values
-    SFCC_SvcReg->>SFCC_SvcReg: merge base params + requestParams<br/>build query string<br/>set GET method & Accept header
+    SFCC_SvcReg->>SFCC_SvcReg: merge base params + requestParams<br/>inject request_id=Date.now() if absent<br/>buildQueryString (skip null/empty values)<br/>set GET method & Accept header
 
-    SFCC_SvcReg->>BloomreachAPI: GET /search?account_id=...&auth_key=***&...
+    SFCC_SvcReg->>BloomreachAPI: GET /search?account_id=...&auth_key=***&request_id=...&...
     BloomreachAPI-->>SFCC_SvcReg: HTTP 200 JSON body
 
     Note over SFCC_SvcReg: parseResponse callback fires
@@ -61,7 +61,7 @@ sequenceDiagram
 
     alt Free-text keyword search
         Client->>bloomreachSearchHelper: search(query, options)
-        bloomreachSearchHelper->>bloomreachSearchHelper: build params<br/>{q, search_type:'keyword', start, rows}
+        bloomreachSearchHelper->>bloomreachSearchHelper: build params<br/>{q, search_type:'keyword',<br/>start: options.start||0, rows: options.rows||24}<br/>+ merge options.extraParams (if any)
         bloomreachSearchHelper->>bloomreachService: call(params)
         bloomreachService->>BloomreachAPI: GET /?q=boots&search_type=keyword&start=0&rows=24
         BloomreachAPI-->>bloomreachService: JSON response
@@ -114,7 +114,7 @@ sequenceDiagram
         questionConfig-->>BootFinderCtrl: {field: 'Shaft_Height', mode: 'string'}
     end
 
-    BootFinderCtrl-->>Browser: render bootfinder/show<br/>(questions JSON + shaftHeightMode embedded in modal HTML)
+    BootFinderCtrl-->>Browser: render bootfinder/show<br/>modal HTML includes:<br/>  data-questions="[{id,field,flag,type,chipLabel},...]"<br/>  (types: single-select | boolean | shaft-height | variant | multi-select)<br/>  data-shaft-height-mode="range|string"<br/>  data-results-url="/BootFinder-Results"<br/>(questions JSON + shaftHeightMode embedded in modal HTML)
 ```
 
 ---
@@ -133,23 +133,27 @@ sequenceDiagram
     participant GTM as GTM dataLayer
     participant Server as BootFinder-Results<br/>(Server)
 
+    User->>DOM: click [data-dismiss-boot-finder]
+    bootFinderJS->>DOM: hide entry card (attr hidden)
+    bootFinderJS->>bootFinderJS: sessionStorage.setItem('boot-finder-entry-dismissed','true')
+
     User->>DOM: click [data-start-boot-finder]
-    bootFinderJS->>Server: GET BootFinder-Show URL
+    bootFinderJS->>Server: GET BootFinder-Show URL (from data-url attr)
     Server-->>bootFinderJS: modal HTML (questions JSON embedded in data-questions attr)
 
-    bootFinderJS->>bootFinderJS: initModal()<br/>parse questions[], reset answers{}<br/>set resultsUrl, currentIndex=0
+    bootFinderJS->>bootFinderJS: initModal()<br/>parse questions[] from data-questions attr<br/>read shaftHeightMode from data-shaft-height-mode attr<br/>read resultsUrl from data-results-url attr<br/>reset answers{}, currentIndex=0<br/>append $container to body
     bootFinderJS->>GTM: pushEvent('finder_start', {})
     bootFinderJS->>DOM: renderCurrentQuestion() → show Q1
 
     loop For each question (index 0..N-1)
         alt User selects an answer option
             User->>DOM: click [data-option]
-            bootFinderJS->>bootFinderJS: recordAnswer(question, value)<br/>store in answers[field]
+            bootFinderJS->>bootFinderJS: recordAnswer(question, value)<br/>type='shaft-height' → answers.shaftHeight=value<br/>type='variant' → Object.assign(answers, value) (size+width)<br/>type=other → answers[question.field]=value
             bootFinderJS->>GTM: pushEvent('finder_question_answered',<br/>{question_id, answer})
             bootFinderJS->>bootFinderJS: advance() → currentIndex++
-            alt More questions remain
+            alt currentIndex < questions.length
                 bootFinderJS->>DOM: renderCurrentQuestion()
-            else Last question answered
+            else currentIndex >= questions.length (all answered)
                 bootFinderJS->>bootFinderJS: fetchResults()
             end
         else User clicks "Skip"
@@ -201,12 +205,20 @@ sequenceDiagram
 
     bootFinderJS->>BootFinderCtrl: GET /BootFinder-Results?answers=<JSON>
     BootFinderCtrl->>BootFinderCtrl: JSON.parse(req.querystring.answers)
+    alt parse fails
+        BootFinderCtrl->>bloomreachLogger: logWarn('BootFinder', 'Could not parse answers param', {raw})
+        BootFinderCtrl->>BootFinderCtrl: rawAnswers = {} (continue with empty)
+    end
 
     BootFinderCtrl->>questionConfig: getActiveQuestions()
     questionConfig->>featureFlags: isEnabled() per flagged question
     featureFlags-->>questionConfig: booleans
     questionConfig-->>BootFinderCtrl: activeQuestions[]
     BootFinderCtrl->>BootFinderCtrl: filter answers to active fields only<br/>(protects against stale client with disabled flags)
+
+    Note over BootFinderCtrl: Shaft-height special resolution<br/>rawAnswers.shaftHeight exists?<br/>→ resolveShaftHeightField() → {field, mode}<br/>  mode=range  → answers[shaft_height_in]={min,max}<br/>  mode=string → answers[Shaft_Height]=value
+    BootFinderCtrl->>questionConfig: resolveShaftHeightField() (if shaftHeight in rawAnswers)
+    questionConfig-->>BootFinderCtrl: {field:'shaft_height_in'|'Shaft_Height', mode:'range'|'string'}
 
     BootFinderCtrl->>featureFlags: isEnabled('REVIEW_COUNT_BOOST')
     BootFinderCtrl->>featureFlags: isEnabled('SALES_RANK_TIEBREAK')
@@ -231,7 +243,8 @@ sequenceDiagram
     else has response
         BootFinderCtrl->>BootFinderCtrl: extract vgIds via bloomreachIdentity.fromBloomreachHit()
 
-        BootFinderCtrl->>sizeAvail: filterByAvailability(vgIds, answers.size, answers.width)
+        BootFinderCtrl->>sizeAvail: filterByAvailability(vgIds, rawAnswers.size, rawAnswers.width)
+        Note over sizeAvail: size/width read from rawAnswers (pre-filter),<br/>not from filtered answers —<br/>variant dimensions are resolved in SFCC, not Bloomreach
         alt No size/width answer
             sizeAvail-->>BootFinderCtrl: all vgIds unchanged
         else size/width was answered
@@ -247,11 +260,11 @@ sequenceDiagram
 
         loop Per available result doc
             BootFinderCtrl->>chipBuilder: buildChips(answers, doc)
-            chipBuilder->>chipBuilder: per field: does doc value match answer?<br/>build label via CHIP_LABEL_BUILDERS[field]
+            chipBuilder->>chipBuilder: per field: does doc value match answer?<br/>build label via CHIP_LABEL_BUILDERS[field]:<br/>  job_type        → "{value} Ready"<br/>  Safety_Toe      → "{value} Toe"<br/>  Toe_Shape       → "{value} Toe Shape"<br/>  Shaft_Height    → "{value}"<br/>  shaft_height_in → "{value}\" Shaft"<br/>  feature_waterproof → "Waterproof"<br/>  warmth_rating   → "{value} Insulation"<br/>  safety_specs    → "{value}"
             chipBuilder-->>BootFinderCtrl: chips[] e.g. ["Electrical Ready","Composite Toe","8\" Shaft"]
         end
 
-        BootFinderCtrl-->>bootFinderJS: render bootfinder/resultsGrid<br/>{results: [{vgId, name, image, price, bvRating, bvReviewCount, chips}]}
+        BootFinderCtrl-->>bootFinderJS: render bootfinder/resultsGrid<br/>{results: [{vgId, name(doc.title), image(doc.thumb_image),<br/>price(doc.price), bvRating, bvReviewCount, chips}]}
     end
 ```
 
@@ -297,7 +310,7 @@ sequenceDiagram
     User->>compareJS: click [data-compare-view]
     compareJS->>sessionStorage: getSelection()
     sessionStorage-->>compareJS: selected ids (≥2 required)
-    compareJS->>Browser: navigate to /Compare-Show?pids=id1,id2,...
+    compareJS->>Browser: window.location.href = data-url + ?pids=id1,id2,...
 
     Note over CompareCtrl,BloomreachAPI: Server rendering phase
 
@@ -326,15 +339,15 @@ sequenceDiagram
             CompareCtrl-->>Browser: 502 + render compare/tableError
         else success
             CompareCtrl->>compareModel: build(docs)
-            compareModel->>compareModel: getActiveRows() — include/exclude rows by feature flag
+            compareModel->>compareModel: getActiveRows() — include/exclude rows by feature flag<br/>Always:    Safety_Toe, Toe_Shape, Shaft_Height<br/>SHAFT_HEIGHT_RANGE on → add shaft_height_in<br/>WATERPROOF_QUESTION on → add feature_waterproof<br/>INSULATION_QUESTION on → add warmth_rating<br/>Always:    bvRating (+ bvReviewCount if REVIEW_COUNT_BOOST on)
             compareModel->>featureFlags: isEnabled('SHAFT_HEIGHT_RANGE')<br/>isEnabled('WATERPROOF_QUESTION')<br/>isEnabled('INSULATION_QUESTION')<br/>isEnabled('REVIEW_COUNT_BOOST')
             featureFlags-->>compareModel: booleans
             loop Per doc (column)
                 compareModel->>identity: fromBloomreachHit(doc)
                 identity-->>compareModel: {vgId, skuId}
-                compareModel->>compareModel: extract attribute values for active rows
+                compareModel->>compareModel: extract attribute values for active rows<br/>name=doc.title, image=doc.thumb_image, price=doc.price
             end
-            compareModel-->>CompareCtrl: {rows: [...], columns: [...]}
+            compareModel-->>CompareCtrl: {rows: [...], columns: [{vgId, name, image, price, values:{...}}]}
             CompareCtrl-->>Browser: render compare/table
         end
     end
@@ -347,9 +360,10 @@ sequenceDiagram
     alt Fewer than 2 remain
         compareJS->>Browser: window.location.reload()
     else 2 or more remain
+        compareJS->>compareJS: renderTable($('.compare-page'), data-compare-url, remaining ids)
         compareJS->>CompareCtrl: GET /Compare-Show?pids=remaining,ids (AJAX)
         CompareCtrl-->>compareJS: updated table HTML
-        compareJS->>DOM: replaceWith new table HTML
+        compareJS->>DOM: $('[data-compare-table]').replaceWith(new table HTML)
     end
 ```
 
@@ -396,6 +410,13 @@ sequenceDiagram
         else Slug found
             jobTypeHelper-->>WorkCtrl: {value:'electrical', slug:'electrical', label:'Electrical'}
 
+            WorkCtrl->>jobTypeHelper: toAnswerFilter('electrical')
+            jobTypeHelper-->>WorkCtrl: {job_type: 'electrical'}
+
+            WorkCtrl->>featureFlags: isEnabled('REVIEW_COUNT_BOOST')
+            WorkCtrl->>featureFlags: isEnabled('SALES_RANK_TIEBREAK')
+            featureFlags-->>WorkCtrl: booleans
+
             WorkCtrl->>attrQueryHelper: queryByAttributes({answers:{job_type:'electrical'},<br/>hardFields:[], reviewCountBoostEnabled, salesRankTiebreakEnabled, rows:30})
             attrQueryHelper->>attrQueryHelper: buildFilterQueries(answers)<br/>soft boost fq: job_type:"electrical"^1.5
             attrQueryHelper->>inventoryBury: getBuryFilterQuery()
@@ -408,12 +429,12 @@ sequenceDiagram
             bloomreachService-->>attrQueryHelper: parsed response
             attrQueryHelper-->>WorkCtrl: bloomreachResponse (or null)
 
-            WorkCtrl->>WorkCtrl: map docs → [{vgId, name, image, price}]<br/>via bloomreachIdentity.fromBloomreachHit()
+            WorkCtrl->>WorkCtrl: map docs → [{vgId, name(doc.title), image(doc.thumb_image), price}]<br/>via bloomreachIdentity.fromBloomreachHit()
 
             WorkCtrl->>PageMgr: getPage('work-joblanding-electrical')
             PageMgr-->>WorkCtrl: contentPage (Page Designer content zone)
 
-            WorkCtrl-->>Browser: render work/jobLanding<br/>{jobType, products[], contentPage, serviceFailed}
+            WorkCtrl-->>Browser: render work/jobLanding<br/>{jobType, products[], contentPage,<br/>serviceFailed: bloomreachResponse===null}
         end
     end
 ```
@@ -508,19 +529,30 @@ sequenceDiagram
                     Transaction->>ContentMgr: getContent('work-electrical-composite-...')
                     alt Content asset does not exist
                         ContentMgr-->>Transaction: null
-                        Transaction->>ContentMgr: createContent(contentId)
-                        Transaction->>ContentMgr: folder('work-thematic-pages').assignContent(content)
+                        Transaction->>ContentMgr: getFolder('work-thematic-pages')
+                        alt folder is null
+                            ContentMgr-->>Transaction: null
+                            Transaction->>Transaction: log.error('folder does not exist — skip')
+                        else folder found
+                            ContentMgr-->>Transaction: folder
+                            Transaction->>ContentMgr: createContent(contentId)
+                            Transaction->>ContentMgr: folder.assignContent(content)
+                        end
                     else exists
                         ContentMgr-->>Transaction: content
                     end
                     Transaction->>Transaction: content.setOnline(docs.length > 0)<br/>(offline = no in-stock products; protects SEO)
                     alt has products
-                        Transaction->>Transaction: content.custom.body = schemaOrgJSON<br/>content.custom.productCount = N
+                        Transaction->>Transaction: content.custom.body = schemaOrgJSON<br/>content.custom.productCount = docs.length
                     end
                     Transaction-->>GenerateTP: committed
                 end
                 GenerateTP->>GenerateTP: processed++
             end
+        end
+
+        alt exception thrown
+            GenerateTP->>GenerateTP: errors++<br/>log.error('Failed processing combination {key}: {message}')
         end
     end
 
@@ -544,6 +576,7 @@ sequenceDiagram
     participant SitePrefs as Site Custom Prefs<br/>(SFCC)
     participant logger as bloomreachLogger
     participant dw_Logger as dw.system.Logger<br/>(SFCC)
+    participant identity as bloomreachIdentity
 
     Note over Any,dw_Logger: Feature flag resolution (every controller uses this pattern)
     Any->>featureFlags: isEnabled('FLAG_KEY')
@@ -556,4 +589,100 @@ sequenceDiagram
     Any->>logger: logServiceFailure(feature, error, queryParams)
     logger->>dw_Logger: Logger.getLogger('bloomreach', feature).error(message + context)
     Note over logger: PII-safe: only VG/SKU ids and facet values<br/>are present in queryParams — never customer data
+
+    Note over Any,dw_Logger: Structured warn logging (e.g. parse failure, skipped combination)
+    Any->>logger: logWarn(feature, message, context)
+    logger->>dw_Logger: Logger.getLogger('bloomreach', feature).warn(message + context)
+
+    Note over Any,dw_Logger: Identity enforcement (any code that sends/receives a product id to/from Bloomreach)
+    Any->>identity: requireVariationGroupId(product)
+    Note over identity: product.isVariationGroup() must be true — throws otherwise
+    identity-->>Any: product.ID (Variation Group id)
+
+    Any->>identity: requireVariantId(variant)
+    Note over identity: variant.isVariant() must be true — throws otherwise
+    identity-->>Any: variant.ID (Variation/SKU id)
+
+    Any->>identity: isWellFormedId(id)
+    Note over identity: /^[A-Za-z0-9_-]+$/ format check only<br/>(used to filter malformed pids before Compare lookup)
+    identity-->>Any: boolean
+```
+
+---
+
+## 11. Attribute & Constants Reference
+
+All logical attribute names, Bloomreach index field names, feature flags, and their preference IDs in one place.
+These constants live in `bloomreachConstants.js` and are the single source of truth consumed by every helper and controller above.
+
+### 11a. Identity Fields
+
+```mermaid
+flowchart LR
+    subgraph IDENTITY["bloomreachConstants.IDENTITY"]
+        PID["PID_FIELD = 'pid'\n(SFCC Variation Group id)"]
+        SKU["SKU_FIELD = 'sku'\n(SFCC Variation / SKU id)"]
+    end
+    PID -->|"used by"| A["bloomreachProductLookupHelper\nbloomreachAttributeQueryHelper\nbloomreachIdentity.fromBloomreachHit()"]
+    SKU -->|"used by"| A
+```
+
+### 11b. Attribute Field Names
+
+```mermaid
+flowchart LR
+    subgraph ATTR["bloomreachConstants.ATTRIBUTES (Bloomreach index field names)"]
+        direction TB
+        A1["SAFETY_TOE = 'Safety_Toe'"]
+        A2["TOE_SHAPE = 'Toe_Shape'"]
+        A3["SHAFT_HEIGHT = 'Shaft_Height'\n(string mode, legacy)"]
+        A4["JOB_TYPE = 'job_type'"]
+        A5["SHAFT_HEIGHT_IN = 'shaft_height_in'\n(numeric range mode — SHAFT_HEIGHT_RANGE flag)"]
+        A6["SAFETY_SPECS = 'safety_specs'\n(multi-value — SAFETY_SPEC_REFINEMENT flag)"]
+        A7["FEATURE_WATERPROOF = 'feature_waterproof'\n(boolean — WATERPROOF_QUESTION flag)"]
+        A8["WARMTH_RATING = 'warmth_rating'\n(INSULATION_QUESTION flag)"]
+        A9["BV_RATING = 'bvRating'\n(always used for sort)"]
+        A10["BV_REVIEW_COUNT = 'bvReviewCount'\n(sort tiebreak — REVIEW_COUNT_BOOST flag)"]
+        A11["SALES_RANK_BUCKET = 'sales_rank_bucket'\n(sort tiebreak — SALES_RANK_TIEBREAK flag)"]
+    end
+    subgraph BURY["inventoryBuryHelper"]
+        B1["inventory_level (Bloomreach field)\nfq: inventory_level:[threshold TO *]^0.1\n     OR inventory_level:[* TO threshold]^-0.5\n(configured via lowStockBuryThreshold site pref)"]
+    end
+    subgraph DOCFIELDS["Bloomreach response doc fields (used in controllers)"]
+        D1["title → product name"]
+        D2["thumb_image → card image URL"]
+        D3["price → display price"]
+    end
+```
+
+### 11c. Feature Flag → Site Preference ID Mapping
+
+```mermaid
+flowchart LR
+    subgraph FLAGS["bloomreachConstants.FEATURE_FLAGS"]
+        direction TB
+        F1["JOB_TYPE → 'finderJobTypeEnabled'"]
+        F2["SHAFT_HEIGHT_RANGE → 'finderShaftHeightRangeEnabled'"]
+        F3["SAFETY_SPEC_REFINEMENT → 'finderSafetySpecRefinementEnabled'"]
+        F4["WATERPROOF_QUESTION → 'finderWaterproofQuestionEnabled'"]
+        F5["INSULATION_QUESTION → 'finderInsulationQuestionEnabled'"]
+        F6["REVIEW_COUNT_BOOST → 'finderReviewCountBoostEnabled'"]
+        F7["SALES_RANK_TIEBREAK → 'finderSalesRankTiebreakEnabled'"]
+        F8["LOOMI_ENABLED → 'loomiEnabled'"]
+    end
+    FLAGS -->|"resolved by"| FH["featureFlags.isEnabled(flagKey)\nSite.getCurrent().getCustomPreferenceValue(prefId)"]
+    FH -->|"consumed by"| C["BootFinder · Compare · Work\nbootFinderQuestionConfig · compareModel\nGenerateThematicPages · Loomi"]
+```
+
+### 11d. Sort Behaviour (attribute queries)
+
+```mermaid
+flowchart TD
+    S1{REVIEW_COUNT_BOOST\nenabled?}
+    S1 -->|yes| SB["sort = bvRating,bvReviewCount desc"]
+    S1 -->|no| SA["sort = bvRating desc"]
+    SB --> S2{SALES_RANK_TIEBREAK\nenabled?}
+    SA --> S2
+    S2 -->|yes| SC["append ,sales_rank_bucket desc"]
+    S2 -->|no| SD["sort unchanged"]
 ```
