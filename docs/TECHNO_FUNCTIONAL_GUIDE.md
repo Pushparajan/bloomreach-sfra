@@ -63,6 +63,8 @@ SFCC SFRA Storefront
           bloomreachIdentity.js    ← VG/SKU ID enforcement
           bloomreachLogger.js      ← structured, credential-safe logging
           inventoryBuryHelper.js   ← low-stock demotion rule
+          thematicPageCombinations.js ← shared reader for the ThematicPageCombination matrix
+          thematicPageLookup.js    ← lets Boot Finder reuse a matching Thematic Page's product set
           GenerateThematicPages.js ← nightly batch job
                 │
                 ▼
@@ -212,10 +214,16 @@ When enabled via the `lowStockBuryThreshold` site preference, the integration au
 3. Modal opens with questions (sourced from server, embedded in HTML).
 4. Shopper answers questions one at a time in the browser (no server calls per answer).
 5. After final answer (or "Show results now"), browser sends all answers to BootFinder-Results.
-6. Server builds Bloomreach filter query from answers, fetches matching products.
+6. Server checks whether the answers exactly match a pre-generated Thematic Page combination
+   (job_type/toe_shape/safety_specs only, nothing else answered) that is currently online - if so,
+   it reuses that page's stored product set instead of calling Bloomreach again (see Thematic Page
+   Reuse below). Otherwise, server builds a Bloomreach filter query from answers and fetches
+   matching products live.
 7. Server filters results further: if shopper answered size/width, only orderable variants in that size/width are shown.
 8. Results grid renders inside the modal with product cards and rationale chips.
 ```
+
+**Thematic Page reuse:** `helpers/thematicPageLookup.findDocs` matches Boot Finder's answers against the same `ThematicPageCombination` matrix `GenerateThematicPages` uses, and - only when `job_type`/`Toe_Shape`/`safety_specs` are the *only* answers present and the matching page is online - returns that page's stored `productData` instead of issuing a live query. This saves a Bloomreach call and guarantees parity with the SEO page for that exact combination, at the cost of the live query's per-request sort boosts (`REVIEW_COUNT_BOOST`/`SALES_RANK_TIEBREAK`) - reused results keep the sort order from when the page was generated. Any other question answered (shaft height, waterproof, insulation) - or any lookup failure - falls back to the normal live query, so this is purely a performance optimization, never a behavior change for a fully-refined search.
 
 **Questions the finder can ask:**
 
@@ -517,6 +525,8 @@ Navigate to: **Merchant Tools > Content > Content Assets > work-thematic-pages**
 Each asset contains:
 - JSON-LD `ItemList` structured data markup (for Google rich results)
 - A product grid with Comparison Tool checkboxes and a "View Comparison" trigger (see §5.4)
+- `custom.productData`: the raw Bloomreach hits as JSON, so Boot Finder can reuse this exact product
+  set for a matching job_type/toe_shape/safety_specs combination (see §5.1)
 - Online/offline state controlled automatically by the job
 
 ---

@@ -13,21 +13,11 @@ function extractSchemaOrgMarkup(body) {
 
 function makeCombo(overrides) {
     return Object.assign({
-        combinationKey: 'electrical-composite',
+        key: 'electrical-composite',
         jobType: 'electrical',
         safetySpec: null,
-        toeShape: 'Composite',
-        enabled: true
+        toeShape: 'Composite'
     }, overrides);
-}
-
-function iteratorFor(combos) {
-    var index = 0;
-    return {
-        hasNext: function () { return index < combos.length; },
-        next: function () { return { custom: combos[index++] }; },
-        close: function () {}
-    };
 }
 
 function loggerStub() {
@@ -52,7 +42,7 @@ function load(options) {
     var isEnabled = opts.isEnabled || sinon.stub().returns(true);
 
     var mod = proxyquire(MODULE_PATH, {
-        'dw/object/CustomObjectMgr': { getAllCustomObjects: sinon.stub().returns(iteratorFor(opts.combos || [makeCombo()])) },
+        '../helpers/thematicPageCombinations': { getEnabledCombinations: sinon.stub().returns(opts.combos || [makeCombo()]) },
         'dw/content/ContentMgr': contentMgr,
         'dw/system/Transaction': { wrap: function (fn) { return fn(); } },
         'dw/system/Status': statusStub(),
@@ -81,13 +71,14 @@ describe('int_ariat_bloomreach/jobs/GenerateThematicPages', function () {
         assert.equal(status.status, 'OK');
         assert.isTrue(content.setOnline.calledWith(true));
         assert.isDefined(content.custom.body);
+        assert.deepEqual(JSON.parse(content.custom.productData), [{ pid: 'VG-1', title: 'Boot A' }]);
     });
 
     it('R-21 gate: skips a combination with a safetySpec when finder.safetySpecRefinement.enabled is off', function () {
         var isEnabled = sinon.stub().callsFake(function (flag) { return flag !== 'SAFETY_SPEC_REFINEMENT'; });
         var queryByAttributes = sinon.stub().returns({ response: { docs: [{ pid: 'VG-1' }] } });
         var loaded = load({
-            combos: [makeCombo({ combinationKey: 'welding-eh', safetySpec: 'EH' })],
+            combos: [makeCombo({ key: 'welding-eh', safetySpec: 'EH' })],
             isEnabled: isEnabled,
             queryByAttributes: queryByAttributes
         });
@@ -100,7 +91,7 @@ describe('int_ariat_bloomreach/jobs/GenerateThematicPages', function () {
     it('processes a safetySpec combination once the flag is on', function () {
         var queryByAttributes = sinon.stub().returns({ response: { docs: [{ pid: 'VG-1' }] } });
         var loaded = load({
-            combos: [makeCombo({ combinationKey: 'welding-eh', safetySpec: 'EH' })],
+            combos: [makeCombo({ key: 'welding-eh', safetySpec: 'EH' })],
             isEnabled: sinon.stub().returns(true),
             queryByAttributes: queryByAttributes
         });

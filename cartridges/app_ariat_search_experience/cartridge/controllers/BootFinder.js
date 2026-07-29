@@ -9,6 +9,7 @@ var attributeQueryHelper = require('*/cartridge/scripts/helpers/bloomreachAttrib
 var identity = require('*/cartridge/scripts/helpers/bloomreachIdentity');
 var featureFlags = require('*/cartridge/scripts/helpers/featureFlags');
 var bloomreachLogger = require('*/cartridge/scripts/helpers/bloomreachLogger');
+var thematicPageLookup = require('*/cartridge/scripts/helpers/thematicPageLookup');
 
 var FEATURE = 'BootFinder';
 
@@ -58,21 +59,40 @@ server.get('Results', interactiveCache.applyNoCache, function (req, res, next) {
         answers[shaftHeightField.field] = shaftHeightAnswer;
     }
 
-    var bloomreachResponse = attributeQueryHelper.queryByAttributes({
-        answers: answers,
-        reviewCountBoostEnabled: featureFlags.isEnabled('REVIEW_COUNT_BOOST'),
-        salesRankTiebreakEnabled: featureFlags.isEnabled('SALES_RANK_TIEBREAK'),
-        rows: 24
-    }, FEATURE);
-
-    if (!bloomreachResponse) {
-        res.setStatusCode(502);
-        res.render('bootfinder/resultsError');
-        next();
-        return;
+    // Reuse a pre-generated Thematic Page's product set (same job_type/
+    // toe_shape/safety_specs hard filters as GenerateThematicPages) instead
+    // of a live Bloomreach call, when the shopper hasn't answered anything
+    // outside that combination - see helpers/thematicPageLookup for the
+    // eligibility rule. Any failure here just falls back to the normal live
+    // query below; it must never break Boot Finder's golden path.
+    var docs = null;
+    try {
+        docs = thematicPageLookup.findDocs(answers);
+    } catch (e) {
+        bloomreachLogger.logWarn(FEATURE, 'Thematic page lookup failed, falling back to live query', {
+            error: e.message
+        });
     }
 
-    var docs = (bloomreachResponse.response && bloomreachResponse.response.docs) || [];
+    if (!docs) {
+        var bloomreachResponse = attributeQueryHelper.queryByAttributes({
+            answers: answers,
+            reviewCountBoostEnabled: featureFlags.isEnabled('REVIEW_COUNT_BOOST'),
+            salesRankTiebreakEnabled: featureFlags.isEnabled('SALES_RANK_TIEBREAK'),
+            rows: 24
+        }, FEATURE);
+
+        if (!bloomreachResponse) {
+            res.setStatusCode(502);
+            res.render('bootfinder/resultsError');
+            next();
+            return;
+        }
+
+        docs = (bloomreachResponse.response && bloomreachResponse.response.docs) || [];
+    } else {
+        docs = docs.slice(0, 24); // match the live query's rows cap
+    }
     var vgIds = docs.map(function (doc) { return identity.fromBloomreachHit(doc).vgId; }).filter(Boolean);
     var availableVgIds = sizeAvailabilityHelper.filterByAvailability(
         vgIds,
