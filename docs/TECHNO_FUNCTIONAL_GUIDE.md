@@ -115,14 +115,18 @@ app_ariat_search_experience:int_ariat_bloomreach:[base_sfra_cartridges]
 | `Compare-Show` | `GET /Compare-Show?pids=id1,id2,...` | No-cache (personalized) | Renders side-by-side comparison table for 2–4 product IDs |
 | `Work-JobLanding` | `GET /Work-JobLanding?jobType=<slug>` | Standard page cache | Renders the shell: trade/job-type landing page (hero, copy, product grid, personalized-strip placeholder) |
 | `Work-PersonalizedStrip` | `GET /Work-PersonalizedStrip?jobType=<slug>` | No-cache (R-38) | Fetched client-side by the shell; content-zone fallback or 1:1-personalized strip (see §5.3, §4.7) |
+| `Product-Show` | `GET /Product-Show?pid=<id>` | Base cartridge's own cache policy (unchanged) | PDP shell — extended (`server.extend`), not overridden; only appends `personalizedStripUrl` |
+| `Product-PersonalizedStrip` | `GET /Product-PersonalizedStrip?pid=<id>` | No-cache (R-38) | Fetched client-side by the PDP shell; "Recommended With This" fragment or nothing (see §5.6) |
+| `Search-Show` | `GET /Search-Show?cgid=<id>` | Base cartridge's own cache policy (unchanged) | Category/PLP shell — extended, not overridden; only appends `personalizedRailUrl` for job-type-mapped categories |
+| `Search-PersonalizedRail` | `GET /Search-PersonalizedRail?cgid=<id>` | No-cache (R-38) | Fetched client-side by the Category shell; "Recommended for You" rail or nothing (see §5.6) |
 | `Loomi-Query` | `GET /Loomi-Query?q=<text>` | — | Returns `{available: false}` while license gate is closed |
 
 ### 3.4 Middleware
 
 Two cache middlewares control how pages are served:
 
-- **`interactiveCache.applyNoCache`** — applied to Boot Finder, Compare, and Work-PersonalizedStrip (R-38). Forces a fresh server call every time. Ensures personalized state (answers, selections, 1:1-personalized content) is never served from a shared cache.
-- **`cache.applyDefaultCache`** — applied to Work-JobLanding's shell. Allows SFCC's standard page cache to absorb repeat traffic since the shell's own content is not shopper-specific.
+- **`interactiveCache.applyNoCache`** — applied to Boot Finder, Compare, Work-PersonalizedStrip, Product-PersonalizedStrip, and Search-PersonalizedRail (R-38). Forces a fresh server call every time. Ensures personalized state (answers, selections, 1:1-personalized content) is never served from a shared cache.
+- **`cache.applyDefaultCache`** — applied to Work-JobLanding's shell. Allows SFCC's standard page cache to absorb repeat traffic since the shell's own content is not shopper-specific. `Product-Show` and `Search-Show`'s own cache policy is whatever the base cartridge already configures - this integration only appends data via `server.extend`/`server.append` and never touches their caching.
 
 ### 3.5 Error Handling Pattern
 
@@ -213,7 +217,7 @@ This is distinct from everything else in this section: it is gated by a dedicate
 
 `helpers/bloomreachPersonalizationIdentity.resolveShopperIdentity(currentCustomer)` returns `{ userId, isLoggedIn }`. `userId` is `dw.customer.Customer.ID` **only when both** `personalization.oneToOne.enabled` is on **and** the shopper is authenticated; it is `null` in every other case (flag off, guest, or ambiguous identity) - the flag check lives inside this single function precisely so no call site can leak a `user_id` while the flag is off, no matter how many call sites are added in the future.
 
-**Scope - three call sites, one exclusion pattern:**
+**Scope - five call sites, one exclusion pattern:**
 
 | Route | Sends `user_id`? | How |
 |---|---|---|
@@ -221,6 +225,10 @@ This is distinct from everything else in this section: it is gated by a dedicate
 | Compare-Show | Yes, when eligible | Same, passed into `bloomreachProductLookupHelper.lookupByIds` |
 | Work-JobLanding **shell** | No, never | Never calls `resolveShopperIdentity` at all |
 | Work-JobLanding's `PersonalizedStrip` **fragment** (§5.3) | Yes, when eligible | Same pattern as Boot Finder/Compare, but only within this separate, uncached fragment - not the cached shell |
+| `Product-Show` **shell** (PDP) | No, never | Only extended via `server.append` to append a fragment URL; never calls `resolveShopperIdentity` |
+| `Product-PersonalizedStrip` **fragment** (§5.6) | Yes, when eligible | Same pattern, within a separate, uncached fragment |
+| `Search-Show` **shell** (Category/PLP) | No, never | Only extended to append a fragment URL for job-type-mapped categories; never calls `resolveShopperIdentity` |
+| `Search-PersonalizedRail` **fragment** (§5.6) | Yes, when eligible, and only for job-type-mapped categories | Same pattern, within a separate, uncached fragment |
 | Free-Text Search/Autosuggest | No, never | Never calls `resolveShopperIdentity` at all; explicitly out of scope for R-38 (see §5.3's note on why) |
 
 The exclusions are structural, not runtime checks: those call sites simply never call `resolveShopperIdentity` or pass a `userId`. Since `bloomreachService` already drops `undefined` params before building the request, an anonymous shopper's (or flag-off) request is byte-for-byte identical to before this feature existed.
@@ -387,6 +395,29 @@ Loomi is a conversational/natural-language search capability from Bloomreach. It
 - While `loomiEnabled` = `false` (required default), the endpoint returns `{ "available": false }`.
 - No AI service is called, no license key is referenced, no UI is built.
 - **Do not activate without a separate, explicit approval and licensing agreement.**
+
+### 5.6 PDP & Category Page 1:1 Personalization (R-38)
+
+**Business goal:** extend the same shell/fragment 1:1-personalization pattern built for Work Job Landing onto the two core storefront page types - the Product Detail Page (PDP) and Category/PLP browse pages - both owned by the base cartridge, not this one.
+
+**Architecture:** identical principle to Work-JobLanding (§5.3) - a cached shell (untouched, whatever the base cartridge already renders/caches) plus a separate, uncached fragment fetched client-side, carrying `user_id` only when eligible (§4.7). Neither fragment ever re-ranks or replaces the shell's own content; each only **adds** a personalized section. Full-grid/full-PDP personalization is explicitly out of scope for this pattern - same boundary already drawn around free-text Search/Autosuggest - it would need a cache-variant redesign or the Next.js end state.
+
+| Page | Shell (owned by base cartridge, untouched) | Fragment (this cartridge) |
+|---|---|---|
+| PDP | Images, price, size/color, reviews, SEO | `Product-PersonalizedStrip` - "Recommended With This" |
+| Category/PLP | Header, facet UI, product grid | `Search-PersonalizedRail` - "Recommended for You" rail, **added**, not re-ranking the grid |
+
+**No base-cartridge template change required.** Since the real base PDP/Category templates aren't part of this repo, `controllers/Product.js` and `controllers/Search.js` extend the base controllers (`server.extend(module.superModule)`, standard SFRA override) to append a fragment URL onto `res.getViewData()` for forward-compatibility, but the client-side fetch (`client/default/js/shared/personalizedFragment.js`) doesn't depend on it - it derives the fragment's URL from the current page's own URL and injects the response into `#maincontent` (SFRA's standard accessibility skip-link target). This is a documented **ASSUMPTION**, not a confirmed base-template hook: a real implementation would ideally place each fragment more precisely (e.g. directly after the main product grid), which requires a small base-cartridge template change this repository cannot make on its own - see "Assumptions Made" below.
+
+**Category → job type mapping:** the rail only renders for categories that map to one of this integration's existing job types (`shared/jobTypeHelper` - the same taxonomy Work-JobLanding and Boot Finder's Q1 already use), reusing an existing mechanism rather than inventing a generic category-to-Bloomreach-facet mapping for the whole catalog. Every other category renders no rail at all.
+
+**PDP recommendation basis - two flagged gaps:**
+- No dedicated Bloomreach "similar items"/"related products" widget endpoint is confirmed for this integration; the PDP fragment approximates "related" by filtering on the *current* product's own `job_type` attribute (excluding the product being viewed), not a confirmed recommendations API shape. Confirm the real shape with the Bloomreach account team before shipping.
+- "Recently viewed" is **not implemented** - no product-view-history mechanism exists anywhere in this codebase to build it from. The PDP fragment is "recommended with this" only.
+
+**Fallback behavior differs from Work-JobLanding:** Work Job Landing's fragment falls back to an existing segment-level Page Designer content zone when not eligible. No equivalent pre-existing non-personalized recommendation zone was found for the PDP or Category pages, so both fragments simply render nothing (the client-side placeholder collapses) when the flag is off, the shopper is a guest, or Bloomreach fails - not an error state, just an empty one.
+
+**Logging:** tagged `PDPPersonalized` and `CategoryPersonalizedRail` respectively, distinct from every other feature's tag, so each can be monitored separately during rollout.
 
 ---
 

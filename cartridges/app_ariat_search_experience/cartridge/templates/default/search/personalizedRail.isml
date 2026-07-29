@@ -1,0 +1,26 @@
+<!---
+    R-38: 1:1-personalized "recommended for you" rail fragment for the
+    Category/PLP shell, rendered by Search-PersonalizedRail. This ADDS a
+    rail to the page - it does NOT re-rank or replace the shell's own main
+    product grid/facet UI. Renders nothing at all when pdict.products is
+    empty/null (category doesn't map to a known job type, flag off, guest,
+    or a Bloomreach failure) - see controllers/Search.js.
+--->
+<isif condition="${pdict.products && pdict.products.length}">
+    <div class="search-results__personalized-rail" data-personalized="true">
+        <h2 class="search-results__personalized-rail-title">
+            ${Resource.msg('search.personalized.title', 'search', 'Recommended for You')}
+        </h2>
+        <div class="product-grid search-results__personalized-rail-grid">
+            <isloop items="${pdict.products}" var="product">
+                <div class="product-tile" data-vg-id="${product.vgId}">
+                    <a href="${URLUtils.url('Product-Show', 'pid', product.vgId)}">
+                        <img src="${product.image}" alt="${product.name}" />
+                        <div class="product-tile__name">${product.name}</div>
+                        <div class="product-tile__price">${product.price}</div>
+                    </a>
+                </div>
+            </isloop>
+        </div>
+    </div>
+</isif>
