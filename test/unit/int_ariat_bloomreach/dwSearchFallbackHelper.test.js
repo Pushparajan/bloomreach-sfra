@@ -87,7 +87,8 @@ describe('int_ariat_bloomreach/helpers/dwSearchFallbackHelper', function () {
                 warmth_rating: undefined,
                 bvRating: 4.5,
                 bvReviewCount: 12,
-                sales_rank_bucket: 3
+                sales_rank_bucket: 3,
+                cart_add_count: undefined
             });
         });
 

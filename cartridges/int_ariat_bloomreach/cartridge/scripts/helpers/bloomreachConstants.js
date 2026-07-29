@@ -31,7 +31,19 @@ module.exports = {
         WARMTH_RATING: 'warmth_rating',
         BV_RATING: 'bvRating',
         BV_REVIEW_COUNT: 'bvReviewCount',
-        SALES_RANK_BUCKET: 'sales_rank_bucket'
+        SALES_RANK_BUCKET: 'sales_rank_bucket',
+        // R-39 (dynamic product badges - Thematic Pages / recommendations):
+        // ASSUMPTION - not a confirmed Bloomreach index field anywhere else
+        // in this integration. Modeled after the real storefront's "IN 51+
+        // CARTS" tile badge (a rolling add-to-cart velocity signal), but no
+        // such field has been confirmed to exist in the actual Bloomreach
+        // feed/index. Confirm the real field name (this may already exist
+        // under a different name, e.g. a merchandising "trending" score)
+        // with the Bloomreach account team before shipping - only
+        // helpers/productBadgeBuilder.js needs to change if so. If absent
+        // or zero on a doc, the badge that depends on it is simply omitted,
+        // never fabricated.
+        CART_ADD_COUNT: 'cart_add_count'
     },
 
     /**

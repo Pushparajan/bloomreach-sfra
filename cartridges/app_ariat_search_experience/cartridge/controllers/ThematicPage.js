@@ -8,6 +8,8 @@ var featureFlags = require('*/cartridge/scripts/helpers/featureFlags');
 var bloomreachLogger = require('*/cartridge/scripts/helpers/bloomreachLogger');
 var bloomreachPersonalizationIdentity = require('*/cartridge/scripts/helpers/bloomreachPersonalizationIdentity');
 var bloomreachConstants = require('*/cartridge/scripts/helpers/bloomreachConstants');
+var productBadgeBuilder = require('*/cartridge/scripts/helpers/productBadgeBuilder');
+var productBlurbBuilder = require('*/cartridge/scripts/helpers/productBlurbBuilder');
 
 var FEATURE = 'ThematicPagePersonalized';
 var STRIP_ROWS = 8;
@@ -57,6 +59,7 @@ server.get('PersonalizedStrip', interactiveCache.applyNoCache, function (req, re
     }
 
     var products = null;
+    var stripDocs = null;
     try {
         var answers = {};
         answers[bloomreachConstants.ATTRIBUTES.JOB_TYPE] = jobType;
@@ -84,16 +87,32 @@ server.get('PersonalizedStrip', interactiveCache.applyNoCache, function (req, re
 
         var docs = bloomreachResponse && bloomreachResponse.response ? bloomreachResponse.response.docs : null;
         if (docs && docs.length) {
+            stripDocs = docs;
             products = docs.map(function (doc) {
                 var ids = identity.fromBloomreachHit(doc);
-                return { vgId: ids.vgId, name: doc.title, image: doc.thumb_image, price: doc.price };
+                return {
+                    vgId: ids.vgId,
+                    name: doc.title,
+                    image: doc.thumb_image,
+                    price: doc.price,
+                    // R-39: dynamic-data badges ("Top Rated", "Best Seller", "In N+ Carts")
+                    badges: productBadgeBuilder.buildBadges(doc)
+                };
             });
         }
     } catch (e) {
         bloomreachLogger.logWarn(FEATURE, '1:1 personalization call failed', { error: e.message });
     }
 
-    res.render('thematicPage/personalizedStrip', { products: products });
+    res.render('thematicPage/personalizedStrip', {
+        products: products,
+        // R-39: dynamic blurb describing this strip's actual contents.
+        blurb: products ? productBlurbBuilder.buildBlurb(stripDocs, {
+            jobType: jobType,
+            toeShape: req.querystring.toeShape,
+            safetySpec: req.querystring.safetySpec
+        }) : null
+    });
     next();
 });
 

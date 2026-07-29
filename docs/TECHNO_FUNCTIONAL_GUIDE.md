@@ -192,7 +192,8 @@ The integration expects these fields to be **present and populated in your Bloom
 | `warmth_rating` | Boot Finder | Insulation level |
 | `bvRating` | Ranking sort | Bazaarvoice average rating |
 | `bvReviewCount` | Ranking sort (feature-flagged) | Number of reviews |
-| `sales_rank_bucket` | Ranking tiebreak (feature-flagged) | Sales velocity bucket |
+| `sales_rank_bucket` | Ranking tiebreak (feature-flagged); "Best Seller" badge (R-39) | Sales velocity bucket — **scale undocumented**, see §5.7.2 |
+| `cart_add_count` | "In N+ Carts" badge (R-39) | **UNCONFIRMED field** — see §5.7.2 before relying on it |
 
 **Action required:** Work with your Bloomreach implementation team to confirm all above fields are indexed and populated in your product feed.
 
@@ -391,6 +392,8 @@ The exclusions are structural, not runtime checks: those call sites simply never
 
 **1:1 personalization (R-38, see §5.6):** each generated page's body also carries a personalized-strip placeholder, built from the same combo fields the page's own query already used. Unlike the other three page types this pattern was applied to, Thematic Pages generate their *entire* body in this one job — there's no base-cartridge template ownership problem here, so the placeholder is simply appended alongside the product grid and "View Comparison" trigger above, no workaround needed.
 
+**Dynamic copy from live data (R-39, see §5.7):** each generated page also gets a data-derived SEO blurb sentence above its grid, and each product tile carries data-derived badges. Both regenerate on every job run.
+
 ---
 
 ### 5.5 Loomi (Future Feature Stub)
@@ -428,6 +431,47 @@ Loomi is a conversational/natural-language search capability from Bloomreach. It
 **Fallback behavior differs from Work-JobLanding:** Work Job Landing's fragment falls back to an existing segment-level Page Designer content zone when not eligible. No equivalent pre-existing non-personalized recommendation zone was found for the PDP, Category, or Thematic Page fragments - the Thematic Page's own static product grid (with Comparison Tool checkboxes) already IS its non-personalized experience, baked into the page itself, not a swappable zone. So all three of these fragments simply render nothing (the client-side placeholder collapses) when the flag is off, the shopper is a guest, or Bloomreach fails - not an error state, just an empty one.
 
 **Logging:** tagged `PDPPersonalized`, `CategoryPersonalizedRail`, and `ThematicPagePersonalized` respectively, distinct from every other feature's tag, so each can be monitored separately during rollout.
+
+### 5.7 Dynamic Copy: SEO Blurbs & Product Badges (R-39)
+
+**Business goal:** every generated Thematic Page otherwise shares identical boilerplate copy, which reads as thin/duplicate content to search engines, and product tiles carry no at-a-glance social proof. R-39 derives both from data the Bloomreach feed already returns, so the copy is unique per page, accurate, and self-updating — no merchandiser rewrite when the catalog shifts.
+
+Two independent pieces, both built on the never-fabricate rule: **a clause or badge is emitted only when the data backing it is genuinely present and meaningful; otherwise it is dropped entirely.** Nothing renders "rated undefined out of 5" or invents a number.
+
+#### 5.7.1 SEO Blurb Sentence (`helpers/productBlurbBuilder`)
+
+A single sentence assembled from the set's own aggregate stats:
+
+> *Browse 24 composite toe electrical work boots rated for EH, from $89 to $249, averaging 4.6 out of 5 stars across 1,284 customer reviews, with waterproof options available.*
+
+| Clause | Source | Suppressed when |
+|---|---|---|
+| Lead: count + descriptor | `docs.length`, combination's `jobType`/`toeShape`/`safetySpec` | Fewer than 3 products (aggregates aren't meaningful) |
+| Price range | `price` across the set | No product has a positive price |
+| Average rating + review volume | `bvRating` **weighted by** `bvReviewCount` | Total reviews < 10 — an average built on 2 reviews isn't a credible claim |
+| Waterproof availability | share of `feature_waterproof` | Fewer than half the set is waterproof |
+
+The rating is **review-volume weighted**, so a single 5-star/1-review item can't outweigh a 4.4-star/800-review one. If only the bare count is derivable, `buildBlurb` returns `null` and nothing renders — a "Browse 24 boots." sentence adds no SEO value over the H1 already on the page.
+
+**Where it appears:** above the product grid on every generated Thematic Page (regenerated each nightly job run), and as a lead-in line above each of the four 1:1-personalization recommendation strips (§5.6), where it describes that strip's actual returned set.
+
+**Not an LLM integration** — deliberately. No generative-copy service is configured in this cartridge, and generated marketing prose would need per-page legal/brand review. This is deterministic sentence assembly from numbers the feed already provides.
+
+#### 5.7.2 Product Tile Badges (`helpers/productBadgeBuilder`)
+
+Short at-a-glance labels on individual tiles, mirroring the badge treatment already used on the live storefront's category pages:
+
+| Badge | Condition | Source fields |
+|---|---|---|
+| **Top Rated** | rating ≥ 4.5 **and** ≥ 20 reviews | `bvRating`, `bvReviewCount` |
+| **Best Seller** | `sales_rank_bucket` ≥ 8 | `sales_rank_bucket` |
+| **In N+ Carts** | ≥ 10, rounded down to nearest 10 | `cart_add_count` |
+
+**Where they appear:** the Thematic Page product grid, and all four recommendation strips/rails. Boot Finder results and the Comparison Tool table are deliberately excluded — neither is an SEO page or a recommendation surface.
+
+**ASSUMPTIONS — two, both flagged rather than guessed:**
+- **`cart_add_count` is a new, unconfirmed field.** It's modeled on the live storefront's "IN 51+ CARTS" tile badge, but no such field is confirmed to exist in the actual Bloomreach feed. It may already exist under a different name (e.g. a merchandising "trending" score). Confirm with the Bloomreach account team before shipping — only `productBadgeBuilder.js` needs to change. When absent, the badge is simply omitted.
+- **`sales_rank_bucket`'s scale isn't documented anywhere** in this codebase (§4.4 calls it only a "sales velocity bucket"). The Best Seller threshold assumes a 1–10 scale where 10 is best; confirm and adjust if it differs.
 
 ---
 

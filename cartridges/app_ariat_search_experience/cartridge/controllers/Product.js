@@ -10,6 +10,8 @@ var identity = require('*/cartridge/scripts/helpers/bloomreachIdentity');
 var bloomreachLogger = require('*/cartridge/scripts/helpers/bloomreachLogger');
 var bloomreachPersonalizationIdentity = require('*/cartridge/scripts/helpers/bloomreachPersonalizationIdentity');
 var bloomreachConstants = require('*/cartridge/scripts/helpers/bloomreachConstants');
+var productBadgeBuilder = require('*/cartridge/scripts/helpers/productBadgeBuilder');
+var productBlurbBuilder = require('*/cartridge/scripts/helpers/productBlurbBuilder');
 var ProductMgr = require('dw/catalog/ProductMgr');
 var URLUtils = require('dw/web/URLUtils');
 
@@ -87,8 +89,11 @@ server.get('PersonalizedStrip', interactiveCache.applyNoCache, function (req, re
     }
 
     var products = null;
+    var stripDocs = null;
+    var stripJobType = null;
     try {
         var jobType = product.custom[bloomreachConstants.ATTRIBUTES.JOB_TYPE];
+        stripJobType = jobType;
         var answers = {};
         if (jobType) {
             answers[bloomreachConstants.ATTRIBUTES.JOB_TYPE] = jobType;
@@ -102,21 +107,34 @@ server.get('PersonalizedStrip', interactiveCache.applyNoCache, function (req, re
 
         var docs = bloomreachResponse && bloomreachResponse.response ? bloomreachResponse.response.docs : null;
         if (docs && docs.length) {
-            products = docs
-                .filter(function (doc) {
-                    var ids = identity.fromBloomreachHit(doc);
-                    return ids.vgId && ids.vgId !== pid; // never recommend the product already being viewed
-                })
-                .map(function (doc) {
-                    var ids = identity.fromBloomreachHit(doc);
-                    return { vgId: ids.vgId, name: doc.title, image: doc.thumb_image, price: doc.price };
-                });
+            // Exclude the product already being viewed BEFORE anything else,
+            // so both the tiles and the blurb describe the same set.
+            stripDocs = docs.filter(function (doc) {
+                var ids = identity.fromBloomreachHit(doc);
+                return ids.vgId && ids.vgId !== pid;
+            });
+            products = stripDocs.map(function (doc) {
+                var ids = identity.fromBloomreachHit(doc);
+                return {
+                    vgId: ids.vgId,
+                    name: doc.title,
+                    image: doc.thumb_image,
+                    price: doc.price,
+                    // R-39: dynamic-data badges ("Top Rated", "Best Seller", "In N+ Carts")
+                    badges: productBadgeBuilder.buildBadges(doc)
+                };
+            });
         }
     } catch (e) {
         bloomreachLogger.logWarn(FEATURE, '1:1 personalization call failed', { error: e.message });
     }
 
-    res.render('product/personalizedStrip', { products: products && products.length ? products : null });
+    var hasProducts = products && products.length;
+    res.render('product/personalizedStrip', {
+        products: hasProducts ? products : null,
+        // R-39: dynamic blurb describing this strip's actual contents.
+        blurb: hasProducts ? productBlurbBuilder.buildBlurb(stripDocs, { jobType: stripJobType }) : null
+    });
     next();
 });
 

@@ -10,6 +10,8 @@ var identity = require('*/cartridge/scripts/helpers/bloomreachIdentity');
 var featureFlags = require('*/cartridge/scripts/helpers/featureFlags');
 var bloomreachLogger = require('*/cartridge/scripts/helpers/bloomreachLogger');
 var bloomreachPersonalizationIdentity = require('*/cartridge/scripts/helpers/bloomreachPersonalizationIdentity');
+var productBadgeBuilder = require('*/cartridge/scripts/helpers/productBadgeBuilder');
+var productBlurbBuilder = require('*/cartridge/scripts/helpers/productBlurbBuilder');
 var jobTypeHelper = require('*/cartridge/scripts/shared/jobTypeHelper');
 var URLUtils = require('dw/web/URLUtils');
 
@@ -70,6 +72,7 @@ server.get('PersonalizedRail', interactiveCache.applyNoCache, function (req, res
     }
 
     var products = null;
+    var railDocs = null;
     try {
         var bloomreachResponse = attributeQueryHelper.queryByAttributes({
             answers: jobTypeHelper.toAnswerFilter(jobType.value),
@@ -82,16 +85,28 @@ server.get('PersonalizedRail', interactiveCache.applyNoCache, function (req, res
 
         var docs = bloomreachResponse && bloomreachResponse.response ? bloomreachResponse.response.docs : null;
         if (docs && docs.length) {
+            railDocs = docs;
             products = docs.map(function (doc) {
                 var ids = identity.fromBloomreachHit(doc);
-                return { vgId: ids.vgId, name: doc.title, image: doc.thumb_image, price: doc.price };
+                return {
+                    vgId: ids.vgId,
+                    name: doc.title,
+                    image: doc.thumb_image,
+                    price: doc.price,
+                    // R-39: dynamic-data badges ("Top Rated", "Best Seller", "In N+ Carts")
+                    badges: productBadgeBuilder.buildBadges(doc)
+                };
             });
         }
     } catch (e) {
         bloomreachLogger.logWarn(FEATURE, '1:1 personalization call failed', { error: e.message });
     }
 
-    res.render('search/personalizedRail', { products: products });
+    res.render('search/personalizedRail', {
+        products: products,
+        // R-39: dynamic blurb describing this rail's actual contents.
+        blurb: products ? productBlurbBuilder.buildBlurb(railDocs, { jobType: jobType.value }) : null
+    });
     next();
 });
 
