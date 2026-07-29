@@ -171,4 +171,36 @@ describe('int_ariat_bloomreach/jobs/GenerateThematicPages', function () {
         assert.include(markup.itemListElement[0].url, 'pid=VG-1');
         assert.notInclude(markup.itemListElement[0].url, 'SKU-1');
     });
+
+    it('new content asset: creates and assigns to folder when content does not yet exist', function () {
+        var newContent = { setOnline: sinon.stub(), custom: {} };
+        var folder = { assignContent: sinon.stub() };
+        var contentMgr = {
+            getContent: sinon.stub().returns(null),
+            getFolder: sinon.stub().returns(folder),
+            createContent: sinon.stub().returns(newContent)
+        };
+        var loaded = load({ contentMgr: contentMgr });
+
+        var status = loaded.mod.execute({ DryRun: false });
+
+        assert.isTrue(contentMgr.createContent.called, 'createContent must be called for new asset');
+        assert.isTrue(folder.assignContent.calledWith(newContent), 'new content must be assigned to folder');
+        assert.isTrue(newContent.setOnline.calledWith(true), 'new content must be set online when products exist');
+        assert.equal(status.status, 'OK');
+    });
+
+    it('folder not found: logs error and skips write but still counts combination as processed', function () {
+        var contentMgr = {
+            getContent: sinon.stub().returns(null),
+            getFolder: sinon.stub().returns(null),
+            createContent: sinon.stub()
+        };
+        var loaded = load({ contentMgr: contentMgr });
+
+        var status = loaded.mod.execute({ DryRun: false });
+
+        assert.isFalse(contentMgr.createContent.called, 'createContent must not be called when folder is missing');
+        assert.equal(status.status, 'OK', 'a skipped combination still counts as processed, not an error');
+    });
 });
