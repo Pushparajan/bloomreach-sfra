@@ -56,12 +56,7 @@ sequenceDiagram
 
 ## 2. Free-Text Search & Autosuggest
 
-> **Business context:** This covers what happens when a shopper types keywords into the
-> site search bar. There are two sub-flows: **search** (returning a full results page for a
-> submitted query such as "waterproof boots") and **autosuggest** (returning instant
-> suggestions as the shopper types). Both call Bloomreach's Discovery API and are the
-> foundation on which all the more specialised attribute-filter features (Boot Finder,
-> Job Landing, Thematic Pages) are built.
+**Business context:** This covers what happens when a shopper types keywords into the site search bar. There are two sub-flows: **search** (returning a full results page for a submitted query such as "waterproof boots") and **autosuggest** (returning instant suggestions as the shopper types). Both call Bloomreach's Discovery API and are the foundation on which all the more specialised attribute-filter features (Boot Finder, Job Landing, Thematic Pages) are built.
 
 Standard keyword search and autocomplete calls used by the existing site search
 integration (these shapes are the baseline that all new filter-query (`fq`)-based features extend).
