@@ -415,13 +415,7 @@ sequenceDiagram
 
 ## 7. Work / Job Landing Page
 
-> **Business context:** Generates a trade-specific browse page — for example,
-> `/Work-JobLanding?jobType=electrical` shows "Boots for Electrical Work" — surfacing the
-> highest-rated products that match a particular job category. Unlike Boot Finder, the
-> shopper doesn't answer any questions; the job type is determined by the URL, which
-> makes these pages fully cacheable and SEO-indexable. Merchandisers enable or disable
-> individual job-type pages through a feature flag in Business Manager, and Page Designer
-> content zones let them add editorial copy above the product grid.
+**Business context:** Generates a trade-specific browse page — for example, `/Work-JobLanding?jobType=electrical` shows "Boots for Electrical Work" — surfacing the highest-rated products that match a particular job category. Unlike Boot Finder, the shopper doesn't answer any questions; the job type is determined by the URL, which makes these pages fully cacheable and SEO-indexable. Merchandisers enable or disable individual job-type pages through a feature flag in Business Manager, and Page Designer content zones let them add editorial copy above the product grid.
 
 Attribute-filtered browse page for a trade job type (e.g. `/Work-JobLanding?jobType=electrical`).
 Uses the same query-building helper as Boot Finder Question 1 (job-type selection) and supports standard SFRA page caching.
