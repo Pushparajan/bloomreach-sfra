@@ -94,8 +94,21 @@ Required custom preferences include:
 - Feature toggles (mapped in `bloomreachConstants.FEATURE_FLAGS`).
 
 ### 6.2 Bloomreach Index Fields
-The integration assumes presence of fields such as:
-- `job_type`, `Toe_Shape`, `safety_specs`, `shaft_height_in`, `bvRating`, `bvReviewCount`, `sales_rank_bucket`.
+The integration assumes presence of the following fields in the Bloomreach index:
+
+| Field | Used By |
+|---|---|
+| `job_type` | Boot Finder, Work Job Landing, Thematic Pages |
+| `Safety_Toe` | Boot Finder, Compare |
+| `Toe_Shape` | Boot Finder, Thematic Pages |
+| `Shaft_Height` | Boot Finder (string mode, default) |
+| `shaft_height_in` | Boot Finder (range mode, feature-flagged) |
+| `safety_specs` | Boot Finder, Thematic Pages |
+| `feature_waterproof` | Boot Finder (feature-flagged) |
+| `warmth_rating` | Boot Finder (feature-flagged) |
+| `bvRating` | Ranking sort (all attribute-query features) |
+| `bvReviewCount` | Ranking sort (feature-flagged) |
+| `sales_rank_bucket` | Ranking tiebreak (feature-flagged) |
 
 ### 6.3 SFCC Content and Custom Objects
 - Custom object type: `ThematicPageCombination`.
@@ -119,6 +132,8 @@ The integration assumes presence of fields such as:
 ## 8. Testing and Quality
 - Linting: `npm run lint`
 - Unit tests: `npm test`
+- Upload cartridges to sandbox: `npm run uploadCartridge` (uploads both `int_ariat_bloomreach` and `app_ariat_search_experience`; requires `dw.json` — see `dw.json.example`)
+- Full upload (all files): `npm run upload`
 - Design expectation: shared helper coverage for filter composition and controller behavior under both success and failure scenarios.
 
 ## 9. Operational Considerations
