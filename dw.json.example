@@ -1,0 +1,8 @@
+{
+  "hostname": "dev111-ai001-ariat.demandware.net",
+  "username": "user",
+  "password": "pass",
+  "code-version": "version1",
+  "cartridge": ["int_ariat_bloomreach", "app_ariat_search_experience"],
+  "root": "cartridges"
+}
