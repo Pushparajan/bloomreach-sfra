@@ -426,7 +426,7 @@ sequenceDiagram
 Attribute-filtered browse page for a trade job type (e.g. `/Work-JobLanding?jobType=electrical`).
 Uses the same query-building helper as Boot Finder Question 1 (job-type selection) and supports standard SFRA page caching.
 
-...mermaid
+```mermaid
 ---
 config:
   layout: elk
