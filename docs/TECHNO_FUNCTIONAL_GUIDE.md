@@ -217,16 +217,18 @@ When enabled via the `lowStockBuryThreshold` site preference, the integration au
 8. Results grid renders inside the modal with product cards and rationale chips.
 ```
 
-**Questions the finder can ask (each individually feature-flagged):**
+**Questions the finder can ask:**
 
-| Question | Field | Flag |
-|---|---|---|
-| What type of work do you do? | `job_type` | `JOB_TYPE` |
-| What shaft height do you prefer? | `shaft_height_in` or `Shaft_Height` | `SHAFT_HEIGHT_RANGE` |
-| Do you need waterproof boots? | `feature_waterproof` | `WATERPROOF_QUESTION` |
-| What insulation level? | `warmth_rating` | `INSULATION_QUESTION` |
-| What safety specs do you need? | `safety_specs` | `SAFETY_SPEC_REFINEMENT` |
-| Size and width | variant filters | (built-in) |
+| Question | Field | Flag | Always Active? |
+|---|---|---|---|
+| What type of work do you do? | `job_type` | `JOB_TYPE` | No |
+| Safety toe type | `Safety_Toe` | _(none)_ | Yes |
+| Toe shape | `Toe_Shape` | _(none)_ | Yes |
+| What shaft height do you prefer? | `shaft_height_in` or `Shaft_Height` | `SHAFT_HEIGHT_RANGE` | No |
+| Do you need waterproof boots? | `feature_waterproof` | `WATERPROOF_QUESTION` | No |
+| What insulation level? | `warmth_rating` | `INSULATION_QUESTION` | No |
+| What safety specs do you need? | `safety_specs` | `SAFETY_SPEC_REFINEMENT` | No |
+| Size and width | variant filters | _(built-in)_ | Yes |
 
 **Rationale chips:** Each result card shows short labels like "Electrical Ready", "Composite Toe", "8\" Shaft" explaining why that product matched the shopper's answers. These are generated server-side from the answer/result match.
 
@@ -474,7 +476,7 @@ Navigate to: **Administration > Operations > Jobs**
 
 Create a job step that executes `GenerateThematicPages` from `int_ariat_bloomreach`. Recommended schedule:
 - **Frequency:** Nightly (e.g. 2:00 AM)
-- **Chain after:** Sitemap generation job (so thematic page online/offline state is reflected in the latest sitemap)
+- **Chain before:** Sitemap generation job (so thematic page online/offline state is reflected in the same sitemap run)
 - **Parameters:** `dryRun=false` for production; `dryRun=true` for test runs
 
 ---
