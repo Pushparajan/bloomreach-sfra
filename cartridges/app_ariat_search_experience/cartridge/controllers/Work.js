@@ -10,6 +10,8 @@ var featureFlags = require('*/cartridge/scripts/helpers/featureFlags');
 var bloomreachLogger = require('*/cartridge/scripts/helpers/bloomreachLogger');
 var dwSearchFallbackHelper = require('*/cartridge/scripts/helpers/dwSearchFallbackHelper');
 var bloomreachPersonalizationIdentity = require('*/cartridge/scripts/helpers/bloomreachPersonalizationIdentity');
+var productBadgeBuilder = require('*/cartridge/scripts/helpers/productBadgeBuilder');
+var productBlurbBuilder = require('*/cartridge/scripts/helpers/productBlurbBuilder');
 var PageMgr = require('dw/experience/PageMgr');
 var URLUtils = require('dw/web/URLUtils');
 
@@ -138,6 +140,7 @@ server.get('PersonalizedStrip', interactiveCache.applyNoCache, function (req, re
     }
 
     var products = null;
+    var stripDocs = null;
     try {
         var bloomreachResponse = attributeQueryHelper.queryByAttributes({
             answers: jobTypeHelper.toAnswerFilter(jobType.value),
@@ -150,7 +153,15 @@ server.get('PersonalizedStrip', interactiveCache.applyNoCache, function (req, re
 
         var docs = bloomreachResponse && bloomreachResponse.response ? bloomreachResponse.response.docs : null;
         if (docs && docs.length) {
-            products = toProductList(docs);
+            stripDocs = docs;
+            // R-39: dynamic-data badges ("Top Rated", "Best Seller", "In N+
+            // Carts") on this recommendation strip only - the shell's own
+            // main grid (toProductList above) is unaffected.
+            products = toProductList(docs).map(function (product, index) {
+                return Object.assign({}, product, {
+                    badges: productBadgeBuilder.buildBadges(docs[index])
+                });
+            });
         }
     } catch (e) {
         // A personalization failure must never break this fragment or the
@@ -166,7 +177,12 @@ server.get('PersonalizedStrip', interactiveCache.applyNoCache, function (req, re
         return;
     }
 
-    res.render('work/personalizedStrip', { products: products, personalized: true });
+    res.render('work/personalizedStrip', {
+        products: products,
+        personalized: true,
+        // R-39: dynamic blurb describing this strip's actual contents.
+        blurb: productBlurbBuilder.buildBlurb(stripDocs, { jobType: jobType.value })
+    });
     next();
 });
 

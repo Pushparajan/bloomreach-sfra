@@ -16,14 +16,22 @@
  * existing "Generate Sitemap" job step in the same job chain, so sitemap
  * output picks up the online/offline state on the same run.
  *
- * custom.body holds two things back to back: the schema.org JSON-LD
- * (unchanged) and a real product grid so the Comparison Tool can be used
+ * custom.body holds four things back to back: the schema.org JSON-LD
+ * (unchanged); (R-39) a dynamic SEO blurb sentence derived from this page's
+ * own aggregate product data - see buildBlurbMarkup() below; a real product
+ * grid (whose tiles also carry R-39 dynamic-data badges) so the Comparison
+ * Tool can be used
  * directly from the thematic page - each tile's checkbox reuses the exact
  * markup/classes/data-attributes of components/compareControl.isml
  * (data-compare-select/data-vg-id/data-name/data-image) and the page's
  * "View Comparison" trigger reuses compare.js's existing data-compare-view
- * contract, so no new client JS, controller, or service is introduced; the
- * existing Compare-Show route and compare.js handlers work unmodified.
+ * contract, so no new client JS, controller, or service is introduced for
+ * that piece; the existing Compare-Show route and compare.js handlers work
+ * unmodified. And (R-38) a personalized-strip placeholder - see
+ * buildPersonalizedStripPlaceholder() below - fetched client-side by the
+ * SAME generic client module Work-JobLanding's fragment already uses,
+ * calling a new live route (ThematicPage-PersonalizedStrip) this batch job
+ * itself never invokes.
  */
 
 var ContentMgr = require('dw/content/ContentMgr');
@@ -36,6 +44,8 @@ var identity = require('../helpers/bloomreachIdentity');
 var constants = require('../helpers/bloomreachConstants');
 var featureFlags = require('../helpers/featureFlags');
 var thematicPageCombinations = require('../helpers/thematicPageCombinations');
+var productBadgeBuilder = require('../helpers/productBadgeBuilder');
+var productBlurbBuilder = require('../helpers/productBlurbBuilder');
 
 var log = Logger.getLogger('bloomreach', 'GenerateThematicPages');
 var FEATURE = 'ThematicPages';
@@ -100,6 +110,44 @@ function escapeHtml(value) {
 }
 
 /**
+ * R-39: renders the page's dynamic SEO blurb - a sentence built from THIS
+ * page's own aggregate product data (count, price range, weighted average
+ * rating, review volume, waterproof share - see helpers/productBlurbBuilder).
+ * Regenerated on every job run, so the copy stays accurate as the catalog
+ * shifts, and each combination's page gets genuinely distinct text rather
+ * than shared boilerplate that reads as duplicate content. Omitted entirely
+ * when the data can't support a meaningful sentence.
+ */
+function buildBlurbMarkup(combo, docs) {
+    var blurb = productBlurbBuilder.buildBlurb(docs, {
+        jobType: combo.jobType,
+        toeShape: combo.toeShape,
+        safetySpec: combo.safetySpec
+    });
+    if (!blurb) {
+        return '';
+    }
+    return '<p class="thematic-page__blurb">' + escapeHtml(blurb) + '</p>';
+}
+
+/**
+ * R-39: renders each tile's dynamic-data badges ("Top Rated", "Best
+ * Seller", "In N+ Carts" - see helpers/productBadgeBuilder). Omitted
+ * entirely when a tile has no qualifying badge, same as the badge builder
+ * itself never fabricating one.
+ */
+function buildBadgeMarkup(doc) {
+    var badges = productBadgeBuilder.buildBadges(doc);
+    if (!badges.length) {
+        return '';
+    }
+    return '<div class="product-tile__badges">' + badges.map(function (badge) {
+        return '<span class="product-tile__badge product-tile__badge--' + escapeHtml(badge.key) + '">'
+            + escapeHtml(badge.label) + '</span>';
+    }).join('') + '</div>';
+}
+
+/**
  * Renders the thematic page's product grid with the SAME compare-checkbox
  * markup/classes as components/compareControl.isml (data-compare-select,
  * data-vg-id, data-name, data-image) so the site's existing compare.js
@@ -123,6 +171,7 @@ function buildProductGridMarkup(combo, docs) {
         var pdpUrl = STOREFRONT_BASE_URL + 'Product-Show?pid=' + encodeURIComponent(ids.vgId);
 
         return '<div class="product-tile thematic-page__tile" data-vg-id="' + vgId + '">'
+            + buildBadgeMarkup(doc)
             + '<a href="' + pdpUrl + '">'
             + '<img src="' + image + '" alt="' + title + '" />'
             + '<div class="product-tile__name">' + title + '</div>'
@@ -142,6 +191,41 @@ function buildProductGridMarkup(combo, docs) {
         + 'data-theme-key="' + escapeHtml(combo.key) + '">'
         + 'View Comparison'
         + '</button>';
+}
+
+/**
+ * R-38: placeholder for the 1:1-personalized "recommended for you" strip,
+ * fetched client-side by the SAME generic client module Work-JobLanding's
+ * fragment uses (client/default/js/work/jobLandingPersonalizedStrip.js -
+ * it's a plain [data-personalized-strip-url] attribute selector, not
+ * scoped to any one page type, so no new client JS was needed here).
+ *
+ * The fragment URL is fully built here, at generation time, from the same
+ * combo fields buildAnswers() already used for this page's own query -
+ * ThematicPage-PersonalizedStrip re-derives the identical hard-filtered
+ * query (plus user_id) at request time rather than re-reading the
+ * ThematicPageCombination custom object, so the fragment stays fast.
+ *
+ * Unlike Work-JobLanding's fragment, there is no separate non-personalized
+ * content-zone mechanism to fall back to here - this page's own static
+ * product grid (with Comparison Tool checkboxes) above already IS the
+ * non-personalized experience, baked into the cached page itself. So (like
+ * the PDP/Category fragments) ThematicPage-PersonalizedStrip renders
+ * nothing at all when ineligible or on failure, rather than inventing a
+ * fallback data source that doesn't exist.
+ */
+function buildPersonalizedStripPlaceholder(combo) {
+    var query = 'jobType=' + encodeURIComponent(combo.jobType);
+    if (combo.toeShape) {
+        query += '&toeShape=' + encodeURIComponent(combo.toeShape);
+    }
+    if (combo.safetySpec) {
+        query += '&safetySpec=' + encodeURIComponent(combo.safetySpec);
+    }
+
+    return '<div class="thematic-page__personalized-strip-placeholder" '
+        + 'data-personalized-strip-url="' + STOREFRONT_BASE_URL + 'ThematicPage-PersonalizedStrip?' + query + '">'
+        + '</div>';
 }
 
 function upsertContent(combo, docs, dryRun) {
@@ -172,7 +256,10 @@ function upsertContent(combo, docs, dryRun) {
         if (hasProducts) {
             var schemaOrgJson = buildSchemaOrgMarkup(combo, docs);
             var schemaOrgMarkup = '<script type="application/ld+json">' + schemaOrgJson + '</script>';
-            content.custom.body = schemaOrgMarkup + buildProductGridMarkup(combo, docs);
+            content.custom.body = schemaOrgMarkup
+                + buildBlurbMarkup(combo, docs)
+                + buildProductGridMarkup(combo, docs)
+                + buildPersonalizedStripPlaceholder(combo);
             content.custom.productCount = docs.length;
             // Raw hits, kept alongside the display markup so Boot Finder can
             // reuse this exact, already-hard-filtered product set (see

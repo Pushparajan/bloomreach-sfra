@@ -1,20 +1,21 @@
 <!---
-    R-38: 1:1-personalized "recommended for you" rail fragment for the
-    Category/PLP shell, rendered by Search-PersonalizedRail. This ADDS a
-    rail to the page - it does NOT re-rank or replace the shell's own main
-    product grid/facet UI. Renders nothing at all when pdict.products is
-    empty/null (category doesn't map to a known job type, flag off, guest,
-    or a Bloomreach failure) - see controllers/Search.js.
+    R-38: 1:1-personalized "recommended for you" fragment for a generated
+    Thematic Page, rendered by ThematicPage-PersonalizedStrip. Renders
+    nothing at all when pdict.products is empty/null (flag off, guest, no
+    job_type context, or a Bloomreach failure) - the page's own static
+    product grid (with Comparison Tool checkboxes) already IS the
+    non-personalized experience, so there is nothing else to fall back to.
+    See controllers/ThematicPage.js for the full reasoning.
 --->
 <isif condition="${pdict.products && pdict.products.length}">
-    <div class="search-results__personalized-rail" data-personalized="true">
-        <h2 class="search-results__personalized-rail-title">
-            ${Resource.msg('search.personalized.title', 'search', 'Recommended for You')}
+    <div class="thematic-page__personalized-strip" data-personalized="true">
+        <h2 class="thematic-page__personalized-strip-title">
+            ${Resource.msg('thematicpage.personalized.title', 'thematicpage', 'Recommended for You')}
         </h2>
         <isif condition="${pdict.blurb}">
-            <p class="search-results__personalized-rail-blurb">${pdict.blurb}</p>
+            <p class="thematic-page__personalized-strip-blurb">${pdict.blurb}</p>
         </isif>
-        <div class="product-grid search-results__personalized-rail-grid">
+        <div class="product-grid thematic-page__personalized-strip-grid">
             <isloop items="${pdict.products}" var="product">
                 <div class="product-tile" data-vg-id="${product.vgId}">
                     <isif condition="${product.badges && product.badges.length}">

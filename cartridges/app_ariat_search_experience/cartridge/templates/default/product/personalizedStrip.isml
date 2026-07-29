@@ -12,9 +12,19 @@
         <h2 class="product-detail__personalized-strip-title">
             ${Resource.msg('product.personalized.title', 'product', 'Recommended With This')}
         </h2>
+        <isif condition="${pdict.blurb}">
+            <p class="product-detail__personalized-strip-blurb">${pdict.blurb}</p>
+        </isif>
         <div class="product-grid product-detail__personalized-strip-grid">
             <isloop items="${pdict.products}" var="product">
                 <div class="product-tile" data-vg-id="${product.vgId}">
+                    <isif condition="${product.badges && product.badges.length}">
+                        <div class="product-tile__badges">
+                            <isloop items="${product.badges}" var="badge">
+                                <span class="product-tile__badge product-tile__badge--${badge.key}">${badge.label}</span>
+                            </isloop>
+                        </div>
+                    </isif>
                     <a href="${URLUtils.url('Product-Show', 'pid', product.vgId)}">
                         <img src="${product.image}" alt="${product.name}" />
                         <div class="product-tile__name">${product.name}</div>

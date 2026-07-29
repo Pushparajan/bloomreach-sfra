@@ -74,9 +74,21 @@ Fields missing or unpopulated degrade the corresponding feature silently (fewer/
 |---|---|---|---|
 | `bvRating` | Number, sortable | Primary sort signal everywhere ranking applies | Bazaarvoice (or equivalent review platform) average rating, synced into the feed |
 | `bvReviewCount` | Number, sortable | Secondary sort signal, only when `finderReviewCountBoostEnabled` is on | Bazaarvoice review count |
-| `sales_rank_bucket` | Number, sortable | Tertiary tiebreak, only when `finderSalesRankTiebreakEnabled` is on | Sales-velocity bucket from your merchandising/analytics system |
+| `sales_rank_bucket` | Number, sortable | Tertiary tiebreak, only when `finderSalesRankTiebreakEnabled` is on; also drives the "Best Seller" tile badge (R-39) | Sales-velocity bucket from your merchandising/analytics system. **Confirm the scale** — the badge threshold assumes 1–10 where 10 is best |
+| `cart_add_count` | Number | "In N+ Carts" tile badge (R-39) — **this field is an assumption, not confirmed to exist** | See §5.1 below |
 
 Sort order used by this integration: `bvRating desc[, bvReviewCount desc][, sales_rank_bucket desc]` — configure these as numeric, sortable fields; no complex Bloomreach Sorting Rule object is assumed or required, since the sort is passed directly as a query parameter on every request.
+
+### 5.1 `cart_add_count` — Action Required Before R-39 Badges Ship
+
+The "In N+ Carts" tile badge (R-39, see `TECHNO_FUNCTIONAL_GUIDE.md` §5.7.2) reads a field named `cart_add_count` — a rolling add-to-cart velocity signal, modeled on the badge treatment already live on the storefront's category pages. **This field is an assumption made during implementation; it has not been confirmed to exist in your Bloomreach feed or index.**
+
+Please confirm one of the following with the Bloomreach account team:
+1. The field exists under this exact name and is populated → nothing to do.
+2. It exists under a **different** name (e.g. a merchandising "trending"/velocity score) → tell the engineering team the real name; only `helpers/productBadgeBuilder.js` and the `CART_ADD_COUNT` entry in `bloomreachConstants.js` change.
+3. No such signal is available → the badge is simply never emitted (the code omits it when the field is absent, rather than failing or fabricating a number). Confirm you're comfortable shipping without it.
+
+The other two badges (`Top Rated`, `Best Seller`) rely only on `bvRating`/`bvReviewCount`/`sales_rank_bucket`, which are already confirmed fields — though `sales_rank_bucket`'s **scale** still needs confirming, since the Best Seller threshold assumes 1–10 with 10 best.
 
 ---
 
@@ -124,7 +136,8 @@ Confirm this matches your account's actual response envelope — if Bloomreach w
 3. [ ] Confirm `pid`/`sku` identity field mapping (§2).
 4. [ ] Confirm `title`/`thumb_image`/`price` response field names (§3).
 5. [ ] Confirm all facet/filter attributes in §4 are present, filterable, and populated with the exact expected values.
-6. [ ] Confirm `bvRating`/`bvReviewCount`/`sales_rank_bucket` are present, numeric, and sortable (§5).
+6. [ ] Confirm `bvRating`/`bvReviewCount`/`sales_rank_bucket` are present, numeric, and sortable (§5), **including `sales_rank_bucket`'s scale**.
+6a. [ ] Resolve the `cart_add_count` question in §5.1 — confirm the field, give its real name, or confirm shipping without that badge.
 7. [ ] Clarify whether free-text Search/Autosuggest is served by this cartridge or a separate existing integration (§6).
 8. [ ] If/when 1:1 personalization is pursued: confirm license entitlement and get privacy/legal sign-off **before** any enablement request (§7).
 9. [ ] Confirm the response envelope shape matches §8.

@@ -198,6 +198,87 @@ describe('int_ariat_bloomreach/jobs/GenerateThematicPages', function () {
         assert.include(body, 'data-image="/a.jpg"');
     });
 
+    it('renders a dynamic SEO blurb (R-39) built from the page\'s own aggregate product data', function () {
+        var content = { setOnline: sinon.stub(), custom: {} };
+        var contentMgr = {
+            getContent: sinon.stub().returns(content),
+            getFolder: sinon.stub().returns({ assignContent: sinon.stub() }),
+            createContent: sinon.stub()
+        };
+        var loaded = load({
+            contentMgr: contentMgr,
+            queryByAttributes: sinon.stub().returns({
+                response: {
+                    docs: [
+                        { pid: 'VG-1', title: 'Boot A', price: 89 },
+                        { pid: 'VG-2', title: 'Boot B', price: 150 },
+                        { pid: 'VG-3', title: 'Boot C', price: 249 }
+                    ]
+                }
+            })
+        });
+
+        loaded.mod.execute({ DryRun: false });
+
+        assert.include(content.custom.body, '<p class="thematic-page__blurb">');
+        assert.include(content.custom.body, 'Browse 3 composite toe electrical work boots, from $89 to $249.');
+    });
+
+    it('omits the blurb entirely rather than emitting a hollow sentence when data cannot support one', function () {
+        var content = { setOnline: sinon.stub(), custom: {} };
+        var contentMgr = {
+            getContent: sinon.stub().returns(content),
+            getFolder: sinon.stub().returns({ assignContent: sinon.stub() }),
+            createContent: sinon.stub()
+        };
+        var loaded = load({
+            contentMgr: contentMgr,
+            // Single product, no price/rating - below every blurb threshold.
+            queryByAttributes: sinon.stub().returns({ response: { docs: [{ pid: 'VG-1', title: 'Boot A' }] } })
+        });
+
+        loaded.mod.execute({ DryRun: false });
+
+        assert.notInclude(content.custom.body, 'thematic-page__blurb');
+        assert.notInclude(content.custom.body, 'undefined');
+    });
+
+    it('product grid: renders dynamic-data badges (R-39) per tile, omitted when no badge qualifies', function () {
+        var content = { setOnline: sinon.stub(), custom: {} };
+        var contentMgr = {
+            getContent: sinon.stub().returns(content),
+            getFolder: sinon.stub().returns({ assignContent: sinon.stub() }),
+            createContent: sinon.stub()
+        };
+        var loaded = load({
+            contentMgr: contentMgr,
+            queryByAttributes: sinon.stub().returns({
+                response: {
+                    docs: [
+                        {
+                            pid: 'VG-1',
+                            title: 'Boot A',
+                            bvRating: 4.8,
+                            bvReviewCount: 50,
+                            sales_rank_bucket: 9
+                        },
+                        { pid: 'VG-2', title: 'Boot B', bvRating: 3, bvReviewCount: 2 }
+                    ]
+                }
+            })
+        });
+
+        loaded.mod.execute({ DryRun: false });
+
+        var body = content.custom.body;
+        assert.include(body, 'product-tile__badge--topRated');
+        assert.include(body, '>Top Rated<');
+        assert.include(body, 'product-tile__badge--bestSeller');
+
+        var badgeBlockCount = (body.match(/product-tile__badges/g) || []).length;
+        assert.equal(badgeBlockCount, 1, 'only VG-1 qualifies for a badge - VG-2\'s tile must have no badge block at all');
+    });
+
     it('product grid: includes a View Comparison trigger using compare.js\'s existing data-compare-view contract', function () {
         var content = { setOnline: sinon.stub(), custom: {} };
         var contentMgr = {
@@ -215,6 +296,47 @@ describe('int_ariat_bloomreach/jobs/GenerateThematicPages', function () {
         assert.match(content.custom.body, /data-compare-view/);
         assert.match(content.custom.body, /data-url="[^"]*Compare-Show"/);
         assert.include(content.custom.body, 'data-theme-key="electrical-composite"');
+    });
+
+    it('includes a personalized-strip placeholder (R-38) built from the combo\'s own job_type/toeShape/safetySpec', function () {
+        var content = { setOnline: sinon.stub(), custom: {} };
+        var contentMgr = {
+            getContent: sinon.stub().returns(content),
+            getFolder: sinon.stub().returns({ assignContent: sinon.stub() }),
+            createContent: sinon.stub()
+        };
+        var loaded = load({
+            combos: [makeCombo({ key: 'welding-eh', jobType: 'welding', safetySpec: 'EH', toeShape: 'Steel' })],
+            contentMgr: contentMgr,
+            queryByAttributes: sinon.stub().returns({ response: { docs: [{ pid: 'VG-1', title: 'Boot A' }] } })
+        });
+
+        loaded.mod.execute({ DryRun: false });
+
+        assert.match(content.custom.body, /data-personalized-strip-url/);
+        assert.include(content.custom.body, 'ThematicPage-PersonalizedStrip?jobType=welding');
+        assert.include(content.custom.body, 'toeShape=Steel');
+        assert.include(content.custom.body, 'safetySpec=EH');
+    });
+
+    it('personalized-strip placeholder omits toeShape/safetySpec query params when the combo doesn\'t have them', function () {
+        var content = { setOnline: sinon.stub(), custom: {} };
+        var contentMgr = {
+            getContent: sinon.stub().returns(content),
+            getFolder: sinon.stub().returns({ assignContent: sinon.stub() }),
+            createContent: sinon.stub()
+        };
+        var loaded = load({
+            combos: [{ key: 'electrical-only', jobType: 'electrical', safetySpec: null, toeShape: null }],
+            contentMgr: contentMgr,
+            queryByAttributes: sinon.stub().returns({ response: { docs: [{ pid: 'VG-1', title: 'Boot A' }] } })
+        });
+
+        loaded.mod.execute({ DryRun: false });
+
+        assert.include(content.custom.body, 'ThematicPage-PersonalizedStrip?jobType=electrical');
+        assert.notInclude(content.custom.body, 'toeShape=');
+        assert.notInclude(content.custom.body, 'safetySpec=');
     });
 
     it('product grid: HTML-escapes product data so a feed value cannot break out of markup', function () {
