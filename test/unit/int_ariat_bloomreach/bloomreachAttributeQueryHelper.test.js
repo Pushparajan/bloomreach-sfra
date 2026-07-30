@@ -59,6 +59,47 @@ describe('int_ariat_bloomreach/helpers/bloomreachAttributeQueryHelper', function
         });
     });
 
+    describe('queryByAttributes fq assembly', function () {
+        // Regression: AND binds tighter than OR, so an ungrouped compound
+        // fragment used to leak its trailing clause to the top level of the
+        // query - low-stock products then matched regardless of the
+        // shopper's own filters, the exact inverse of burying them.
+        it('parenthesizes a compound (OR-bearing) fragment before joining with AND', function () {
+            var serviceCall = sinon.stub().returns({ response: { docs: [] } });
+            var loaded = load({
+                serviceCall: serviceCall,
+                deps: {
+                    './inventoryBuryHelper': {
+                        getBuryFilterQuery: sinon.stub().returns('inv:[1 TO *]^2 OR inv:[* TO 1]^0.1')
+                    }
+                }
+            });
+
+            loaded.mod.queryByAttributes({ answers: { job_type: 'electrical' }, hardFields: ['job_type'] }, 'BootFinder');
+
+            assert.equal(
+                serviceCall.firstCall.args[0].fq,
+                'job_type:"electrical" AND (inv:[1 TO *]^2 OR inv:[* TO 1]^0.1)'
+            );
+        });
+
+        it('does not double-wrap a fragment that already parenthesizes itself', function () {
+            var serviceCall = sinon.stub().returns({ response: { docs: [] } });
+            var loaded = load({
+                serviceCall: serviceCall,
+                deps: {
+                    './inventoryBuryHelper': {
+                        getBuryFilterQuery: sinon.stub().returns('(inv:[1 TO *]^2 OR inv:[* TO 1]^0.1)')
+                    }
+                }
+            });
+
+            loaded.mod.queryByAttributes({ answers: {} }, 'BootFinder');
+
+            assert.equal(serviceCall.firstCall.args[0].fq, '(inv:[1 TO *]^2 OR inv:[* TO 1]^0.1)');
+        });
+    });
+
     describe('queryByAttributes', function () {
         it('happy path: calls the service with fq built from answers and sorts by bvRating when review-count boost is off', function () {
             var serviceCall = sinon.stub().returns({ response: { docs: [{ pid: 'VG-1' }] } });

@@ -39,6 +39,7 @@ function makeSearchModelInstance(hits) {
     return {
         setOrderableProductsOnly: sinon.stub(),
         setRecursiveCategorySearch: sinon.stub(),
+        setCategoryID: sinon.stub(),
         addRefinementValues: sinon.stub(),
         search: sinon.stub(),
         getProductSearchHits: sinon.stub().callsFake(function () { return hitsIteratorFor(hits || []); })
@@ -54,10 +55,14 @@ function load(options) {
     var searchModelInstance = opts.searchModelInstance || makeSearchModelInstance([]);
     var FakeProductSearchModel = function () { return searchModelInstance; };
     var getProduct = opts.getProduct || sinon.stub().returns(null);
+    var siteCatalog = 'siteCatalog' in opts ? opts.siteCatalog : {
+        getRoot: function () { return { getID: function () { return 'root'; } }; }
+    };
 
     var mod = proxyquire(MODULE_PATH, {
         'dw/catalog/ProductSearchModel': FakeProductSearchModel,
         'dw/catalog/ProductMgr': { getProduct: getProduct },
+        'dw/catalog/CatalogMgr': { getSiteCatalog: function () { return siteCatalog; } },
         './bloomreachConstants': bloomreachConstants,
         './bloomreachIdentity': bloomreachIdentity
     });
@@ -90,6 +95,36 @@ describe('int_ariat_bloomreach/helpers/dwSearchFallbackHelper', function () {
                 sales_rank_bucket: 3,
                 cart_add_count: undefined
             });
+        });
+
+        it('anchors the search at the site catalog root, since refinement values alone produce no result set to refine', function () {
+            var loaded = load();
+
+            loaded.mod.queryByAttributes({ answers: { job_type: 'electrical' } });
+
+            assert.isTrue(loaded.searchModelInstance.setCategoryID.calledOnceWithExactly('root'));
+            assert.isTrue(loaded.searchModelInstance.setRecursiveCategorySearch.calledOnceWithExactly(true));
+        });
+
+        it('still searches when no site catalog is configured, rather than throwing on the outage path', function () {
+            var loaded = load({ siteCatalog: null });
+
+            var result = loaded.mod.queryByAttributes({ answers: { job_type: 'electrical' } });
+
+            assert.isFalse(loaded.searchModelInstance.setCategoryID.called);
+            assert.deepEqual(result.response.docs, []);
+        });
+
+        it('stops draining the hit iterator at MAX_FALLBACK_HITS, so a broad refinement cannot hang an already-degraded request', function () {
+            var hits = [];
+            for (var i = 0; i < 600; i += 1) {
+                hits.push(hitFor(makeProduct({ ID: 'VG-' + i })));
+            }
+            var loaded = load({ searchModelInstance: makeSearchModelInstance(hits) });
+
+            var result = loaded.mod.queryByAttributes({ answers: { job_type: 'electrical' }, rows: 600 });
+
+            assert.lengthOf(result.response.docs, 500);
         });
 
         it('adds a refinement per non-empty, non-object answer, and skips range ({min,max}) answers entirely', function () {

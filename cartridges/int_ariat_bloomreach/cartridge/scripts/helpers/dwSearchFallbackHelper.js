@@ -33,16 +33,37 @@
  * soft-boosted questions - shaft height, waterproof, insulation - may
  * narrow results more strictly than usual), and {min,max} range answers
  * (e.g. shaft_height_in) aren't refinable this way and are skipped entirely
- * rather than guessed at.
+ * rather than guessed at. Ranking is also applied to at most
+ * MAX_FALLBACK_HITS hits rather than the whole result set - see that
+ * constant for why an unbounded drain is the wrong call on this path.
  */
 
 var ProductSearchModel = require('dw/catalog/ProductSearchModel');
 var ProductMgr = require('dw/catalog/ProductMgr');
+var CatalogMgr = require('dw/catalog/CatalogMgr');
 var constants = require('./bloomreachConstants');
 var identity = require('./bloomreachIdentity');
 
 var ATTR = constants.ATTRIBUTES;
 var ATTRIBUTE_FIELDS = Object.keys(ATTR).map(function (key) { return ATTR[key]; });
+
+/**
+ * Upper bound on hits pulled out of the search iterator before sorting.
+ *
+ * This path only ever runs when Bloomreach is already unreachable, so the
+ * request has ALREADY spent the service profile's full timeout before
+ * reaching here and a live shopper is waiting. Draining an unbounded
+ * iterator (a broad refinement on a full catalog can be tens of thousands
+ * of hits) on top of that turns a degraded page into a timed-out one.
+ *
+ * Accepted degradation, on top of the two this module already documents:
+ * ranking below is applied to at most this many hits, so for a very broad
+ * refinement the sort is over a catalog-order prefix rather than the whole
+ * result set. That is the right trade during an outage - and it is bounded
+ * well above the largest `rows` any caller asks for (30, Work Job Landing),
+ * so the shopper still gets a full page of results either way.
+ */
+var MAX_FALLBACK_HITS = 500;
 
 /**
  * @param {dw.catalog.Product} product
@@ -109,6 +130,19 @@ function queryByAttributes(params) {
     searchModel.setOrderableProductsOnly(true);
     searchModel.setRecursiveCategorySearch(true);
 
+    // ProductSearchModel needs a search phrase or a category to search
+    // WITHIN - refinement values alone narrow a result set, they don't
+    // produce one, so without this the fallback returns zero products in
+    // exactly the outage it exists for (silently: an empty grid, not an
+    // error). Anchoring at the site catalog's root category plus the
+    // recursive flag above is the "whole catalog" equivalent, which is the
+    // scope the Bloomreach query this stands in for already had.
+    var siteCatalog = CatalogMgr.getSiteCatalog();
+    var root = siteCatalog ? siteCatalog.getRoot() : null;
+    if (root) {
+        searchModel.setCategoryID(root.getID());
+    }
+
     Object.keys(params.answers || {}).forEach(function (field) {
         var value = params.answers[field];
         if (value === undefined || value === null || value === '' || typeof value === 'object') {
@@ -121,7 +155,7 @@ function queryByAttributes(params) {
 
     var docs = [];
     var hits = searchModel.getProductSearchHits();
-    while (hits.hasNext()) {
+    while (hits.hasNext() && docs.length < MAX_FALLBACK_HITS) {
         var doc = toDoc(hits.next().getProduct());
         if (doc) {
             docs.push(doc);

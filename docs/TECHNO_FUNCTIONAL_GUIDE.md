@@ -141,7 +141,8 @@ All features follow the same pattern:
 `helpers/dwSearchFallbackHelper` maps SFCC product search/lookup results into the same doc shape a Bloomreach hit has (`pid`, `title`, `thumb_image`, `price`, every field in `bloomreachConstants.ATTRIBUTES`, `bvRating`, `bvReviewCount`), so nothing downstream — rationale chips, `compareModel`, thematic markup — needs to know or care which source produced the docs.
 
 - **Scope:** only the three live routes use it. `GenerateThematicPages` (the nightly batch job) deliberately does not — a stale-but-valid page from the last successful run is a better outcome for a background job than a same-run substitute, so it keeps its existing skip-and-log-error behavior.
-- **Accepted degradation:** SFCC's attribute refinement (`ProductSearchModel.addRefinementValues`) has no boost concept, so every answer becomes a hard filter in the fallback — Bloomreach's soft-boosted questions (shaft height, waterproof, insulation) may narrow results more strictly than usual. Range answers (e.g. `shaft_height_in` as `{min, max}`) aren't refinable this way and are skipped entirely rather than guessed at. Ranking is reproduced by sorting the mapped docs by `bvRating` (then `bvReviewCount`/`sales_rank_bucket` per the same feature flags the live query uses) rather than a Business Manager Sorting Rule, since no such rule is assumed to exist.
+- **Search scope:** the model is anchored at the site catalog's root category (plus recursive category search). Refinement values only *narrow* a result set — they don't produce one — so without a category or search phrase the fallback returns zero products in exactly the outage it exists for, and does so silently (an empty grid, not an error).
+- **Accepted degradation:** SFCC's attribute refinement (`ProductSearchModel.addRefinementValues`) has no boost concept, so every answer becomes a hard filter in the fallback — Bloomreach's soft-boosted questions (shaft height, waterproof, insulation) may narrow results more strictly than usual. Range answers (e.g. `shaft_height_in` as `{min, max}`) aren't refinable this way and are skipped entirely rather than guessed at. Ranking is reproduced by sorting the mapped docs by `bvRating` (then `bvReviewCount`/`sales_rank_bucket` per the same feature flags the live query uses) rather than a Business Manager Sorting Rule, since no such rule is assumed to exist — and that sort is applied to at most **500 hits** (`MAX_FALLBACK_HITS`), so for a very broad refinement it ranks a catalog-order prefix rather than the whole result set. This path only runs after the Bloomreach service profile's timeout has *already* elapsed with a shopper waiting, so draining an unbounded iterator on top of that turns a degraded page into a timed-out one. The cap sits well above the largest `rows` any caller requests (30, Work Job Landing).
 - **ASSUMPTION:** every `ATTRIBUTES` field name and `bvRating`/`bvReviewCount` are real, refinable SFCC Product custom/system attribute IDs (plausible for `bvRating`/`bvReviewCount` given a Bazaarvoice-style integration already syncs review data onto Product). Verify against the real catalog before shipping; only this module needs to change if the IDs differ.
 
 ---
@@ -212,6 +213,20 @@ This ensures highly-rated, well-reviewed boots surface first, with sales velocit
 ### 4.6 Inventory Burying
 
 When enabled via the `lowStockBuryThreshold` site preference, the integration automatically appends a filter fragment that demotes (buries) low-stock products in Bloomreach results. Products below the threshold are pushed to the bottom of results without being removed entirely.
+
+The fragment is emitted as a **single parenthesized group** with **positive boosts only**:
+
+```
+(inventory_level:[<threshold> TO *]^2 OR inventory_level:[* TO <threshold>]^0.1 OR (*:* -inventory_level:[* TO *]))
+```
+
+Three properties of that shape are load-bearing, and each replaced a defect:
+
+- **Self-contained.** Fragments are joined with ` AND `, and AND binds tighter than OR, so an ungrouped `A OR B` fragment leaks its trailing clause to the top level of the query — every low-stock product would then match regardless of the shopper's own filters, the exact inverse of burying them. `bloomreachAttributeQueryHelper` now also parenthesizes any OR-bearing fragment at the join site, so this can't recur with a future compound fragment.
+- **Positive boosts only.** Lucene has no negative boost; `^-0.5` is a parse error, not a demotion. A bury is expressed as a *lower positive* boost on the low-stock branch.
+- **Never excludes.** The third branch matches products with no `inventory_level` value at all. Without it, an unpopulated feed field would silently empty every result set on the site.
+
+**Open item:** if the account treats `fq` as a pure filter (the common Solr semantic), boosts inside it contribute nothing to scoring and this fragment degrades to a harmless match-everything no-op rather than a wrong ranking. Burying would then have to move to whatever boost/rule mechanism the account exposes, or stay in the Bloomreach console rule that already does it globally. Confirm with the Bloomreach account team; only `helpers/inventoryBuryHelper.js` changes either way.
 
 ### 4.7 1:1 (Individual-Level) Personalisation — `user_id` (R-38)
 
@@ -416,7 +431,14 @@ Loomi is a conversational/natural-language search capability from Bloomreach. It
 | Category/PLP | Header, facet UI, product grid (base cartridge) | `Search-PersonalizedRail` - "Recommended for You" rail, **added**, not re-ranking the grid |
 | Thematic Page | Schema.org JSON-LD + product grid + Compare trigger (this cartridge, §5.4) | `ThematicPage-PersonalizedStrip` - "Recommended for You" |
 
-**No base-cartridge template change required for PDP/Category.** Since the real base PDP/Category templates aren't part of this repo, `controllers/Product.js` and `controllers/Search.js` extend the base controllers (`server.extend(module.superModule)`, standard SFRA override) to append a fragment URL onto `res.getViewData()` for forward-compatibility, but the client-side fetch (`client/default/js/shared/personalizedFragment.js`) doesn't depend on it - it derives the fragment's URL from the current page's own URL and injects the response into `#maincontent` (SFRA's standard accessibility skip-link target). This is a documented **ASSUMPTION**, not a confirmed base-template hook: a real implementation would ideally place each fragment more precisely (e.g. directly after the main product grid), which requires a small base-cartridge template change this repository cannot make on its own - see "Assumptions Made" below.
+**One-line base-cartridge template change recommended for PDP/Category.** Since the real base PDP/Category templates aren't part of this repo, `controllers/Product.js` and `controllers/Search.js` extend the base controllers (`server.extend(module.superModule)`, standard SFRA override) to append a fragment URL onto `res.getViewData()`. The client-side fetch (`client/default/js/shared/personalizedFragment.js`) resolves the fragment URL in two steps:
+
+1. **A server-rendered base URL** on the page (`[data-personalized-fragment-base]`). This is the only fully reliable source, because only the server knows the site/locale prefix. Emitting the already-computed `personalizedStripUrl`/`personalizedRailUrl` as that attribute is the one-line base-template change referred to above.
+2. **Derivation from the current path**, used only when the page is itself on a pipeline-style controller URL (`.../Product-Show` → `.../Product-PersonalizedStrip`).
+
+On any other URL — which includes **every SEO-friendly storefront URL**, i.e. how real PDP and Category pages are normally served — the fragment is **skipped entirely**. This is deliberate: deriving unconditionally turned `/boots/mens-work-boot.html` into `/boots/Product-PersonalizedStrip`, a 404 the shopper never sees but which silently disables personalization on exactly the pages it was built for. Until the template change in (1) is made, **assume the PDP and Category fragments do not fire on production-style URLs.**
+
+Injection point is `#maincontent` (SFRA's standard accessibility skip-link target) — a documented **ASSUMPTION**, not a confirmed base-template hook: a real implementation would ideally place each fragment more precisely (e.g. directly after the main product grid), which requires the same kind of small base-cartridge template change - see "Assumptions Made" below.
 
 **Thematic Pages have no such problem** - `GenerateThematicPages.js` already generates 100% of the page's body itself (§5.4), so its placeholder (`buildPersonalizedStripPlaceholder`) is just appended alongside the existing product grid/Compare trigger at generation time, with the full fragment URL (including `jobType`/`toeShape`/`safetySpec` query params) built from the same combo fields the page's own query already used - no workaround, and no new client JS needed: it reuses the same generic `[data-personalized-strip-url]`-selector module Work-JobLanding's fragment uses (`client/default/js/work/jobLandingPersonalizedStrip.js`).
 

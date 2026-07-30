@@ -33,6 +33,12 @@ var RAIL_ROWS = 8;
  * to-Bloomreach-facet mapping for the whole catalog, which is not
  * confirmed to exist. Every other category renders no rail (graceful
  * no-op), not a generic fallback.
+ *
+ * As on the PDP (controllers/Product.js), this server-computed URL is the
+ * reliable source for the client-side fetch; the client's path-derivation
+ * fallback skips the rail on SEO-friendly category URLs rather than
+ * request a wrong one. Emitting it as `data-personalized-fragment-base` in
+ * the Category template closes that gap.
  */
 server.append('Show', function (req, res, next) {
     var categoryId = req.querystring.cgid;
