@@ -34,6 +34,17 @@ Both cartridges from this repo must be listed **before** the base cartridges sup
 3. `.vscode/settings.json` already points the Prophet extension's cartridge path at both `./cartridges` and `../ariat-dw/cartridges` for cross-project code navigation and debugging.
 4. `npm install`, then `npm run uploadCartridge` to push just this repo's two cartridges to your sandbox (upload `ariat-dw`'s cartridges separately, from that repo).
 
+## Documentation
+
+| Document | Audience |
+|---|---|
+| `docs/TECHNO_FUNCTIONAL_GUIDE.md` | Engineering + BA — architecture, features, flags, BM setup, runbook |
+| `docs/CACHE_STRATEGY.md` | Engineering, DevOps, QA — cache policy per route |
+| `docs/sequence-diagrams.md` | Engineering — per-flow sequence diagrams |
+| `docs/BLOOMREACH_CONSOLE_CONFIGURATION.md` | Bloomreach account team — required feed fields and sign-off checklist |
+| `docs/CONSOLE_REMEDIATION_RUNBOOK.md` | Merchandising ops, eComm, feed owners — the architecture findings this repo **cannot** fix, and how to close them in the console |
+| `docs/THEMATIC_PAGE_COMBINATIONS.md` | Merchandising, SEO — thematic page matrix to set up |
+
 ## Development
 
 - `npm test` — unit tests (Mocha/Chai/Sinon)
