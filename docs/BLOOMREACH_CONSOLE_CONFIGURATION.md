@@ -60,7 +60,7 @@ These attribute names are used verbatim in every `fq` (filter query) fragment th
 | `safety_specs` | Multi-value string | Boot Finder, Thematic Pages (feature-flagged) | e.g. `EH`, `SD`, `PR` — confirm exact values against your feed |
 | `feature_waterproof` | Boolean | Boot Finder (feature-flagged) | |
 | `warmth_rating` | String | Boot Finder (feature-flagged) | Insulation level |
-| `inventory_level` | Number | Inventory-bury rule (all attribute-query features) | Used in a range filter to deprioritize low stock, not hard-exclude |
+| `inventory_level` | Number | Inventory-bury rule (all attribute-query features) | Used in a range filter to deprioritize low stock, not hard-exclude. Products with no value still match, so an unpopulated field degrades to a no-op rather than emptying results — but the bury then does nothing, so confirm it is actually populated |
 
 **Action required:** confirm every attribute above is (a) present and populated in the feed, (b) configured as filterable in Bloomreach's attribute/facet settings, and (c) confirm the *exact* value strings for `job_type`, `Toe_Shape`, and `safety_specs` — see `THEMATIC_PAGE_COMBINATIONS.md`, which depends on these being accurate.
 
@@ -138,6 +138,7 @@ Confirm this matches your account's actual response envelope — if Bloomreach w
 5. [ ] Confirm all facet/filter attributes in §4 are present, filterable, and populated with the exact expected values.
 6. [ ] Confirm `bvRating`/`bvReviewCount`/`sales_rank_bucket` are present, numeric, and sortable (§5), **including `sales_rank_bucket`'s scale**.
 6a. [ ] Resolve the `cart_add_count` question in §5.1 — confirm the field, give its real name, or confirm shipping without that badge.
+6b. [ ] Confirm whether `fq` boosts (`field:"value"^weight`) affect scoring on this account, or whether `fq` is a pure filter. Everything this integration treats as a *soft boost* — Boot Finder's near-match questions and the `inventory_level` bury — depends on the former. If `fq` is a pure filter, those boosts are inert (the bury becomes a no-op; the soft-boosted questions become hard filters) and boosting must move to whatever separate mechanism the account exposes.
 7. [ ] Clarify whether free-text Search/Autosuggest is served by this cartridge or a separate existing integration (§6).
 8. [ ] If/when 1:1 personalization is pursued: confirm license entitlement and get privacy/legal sign-off **before** any enablement request (§7).
 9. [ ] Confirm the response envelope shape matches §8.

@@ -73,6 +73,25 @@ function buildFilterQueries(answers, options) {
 }
 
 /**
+ * Fragments are joined with ' AND ' below, and AND binds tighter than OR, so
+ * any fragment containing a top-level ` OR ` would leak its trailing clause
+ * out of the conjunction and match documents the other filters exclude.
+ * Parenthesizing at the join site makes that structurally impossible for
+ * EVERY fragment, present and future - not just the one
+ * (inventoryBuryHelper's) that hit it - so a new compound fragment can't
+ * silently corrupt the query by forgetting its own parentheses.
+ *
+ * @param {string} fragment
+ * @returns {string} the fragment, safely groupable in a conjunction
+ */
+function groupIfCompound(fragment) {
+    if (fragment.indexOf(' OR ') === -1 || fragment.charAt(0) === '(') {
+        return fragment;
+    }
+    return '(' + fragment + ')';
+}
+
+/**
  * Calls Bloomreach with attribute filters instead of free text - the shape
  * requested for Boot Finder / Work-JobLanding. Sorting follows the
  * bvRating/bvReviewCount feature-flag fallback described in the shared
@@ -104,7 +123,7 @@ function queryByAttributes(params, feature) {
     }
 
     var requestParams = {
-        fq: fq.join(' AND '),
+        fq: fq.map(groupIfCompound).join(' AND '),
         sort: sortField + ' desc',
         start: params.start || 0,
         rows: params.rows || 24,

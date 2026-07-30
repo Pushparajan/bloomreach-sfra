@@ -745,7 +745,7 @@ flowchart LR
         A11["SALES_RANK_BUCKET = 'sales_rank_bucket'\n(sort tiebreak — SALES_RANK_TIEBREAK flag)"]
     end
     subgraph BURY["inventoryBuryHelper"]
-        B1["inventory_level (Bloomreach field)\nfq: inventory_level:[threshold TO *]^0.1\n     OR inventory_level:[* TO threshold]^-0.5\n(configured via lowStockBuryThreshold site pref)"]
+        B1["inventory_level (Bloomreach field)\nfq: (inventory_level:[threshold TO *]^2\n     OR inventory_level:[* TO threshold]^0.1\n     OR (*:* -inventory_level:[* TO *]))\nsingle group, positive boosts only, never excludes\n(configured via lowStockBuryThreshold site pref)"]
     end
     subgraph DOCFIELDS["Bloomreach response doc fields (used in controllers)"]
         D1["title → product name"]

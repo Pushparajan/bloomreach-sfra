@@ -23,11 +23,17 @@ var STRIP_ROWS = 8;
  * render data. Nothing the base Product-Show controller already computed
  * (images, price, size/color, reviews, SEO) is touched - this is strictly
  * additive, so the shell's own cacheability (whatever the base controller
- * already configures) is unaffected. The client fetches the fragment
- * itself without needing this value (see
- * client/default/js/shared/personalizedFragment.js), but it's appended
- * here too for forward-compatibility with a future server-rendered/remote-
- * include version of this same fragment.
+ * already configures) is unaffected.
+ *
+ * This URL is the RELIABLE source for the client-side fetch - only the
+ * server knows the site/locale prefix. The client falls back to deriving
+ * the URL from the current path, which it can only do safely on
+ * pipeline-style URLs, so on an SEO-friendly PDP URL it skips the fragment
+ * entirely rather than request one it knows is wrong (see
+ * client/default/js/shared/personalizedFragment.js's resolveFragmentUrl).
+ * To close that gap, emit this value in the PDP template as
+ * `data-personalized-fragment-base` holding the URL's directory prefix - a
+ * one-line base-cartridge change; nothing in this cartridge changes with it.
  */
 server.append('Show', function (req, res, next) {
     var pid = req.querystring.pid;
